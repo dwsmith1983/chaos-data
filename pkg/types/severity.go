@@ -83,3 +83,25 @@ func (s *Severity) UnmarshalJSON(data []byte) error {
 	*s = parsed
 	return nil
 }
+
+// MarshalYAML implements yaml.Marshaler.
+func (s Severity) MarshalYAML() (interface{}, error) {
+	if !s.IsValid() {
+		return nil, fmt.Errorf("%w: %d", ErrInvalidSeverity, int(s))
+	}
+	return s.String(), nil
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (s *Severity) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var str string
+	if err := unmarshal(&str); err != nil {
+		return fmt.Errorf("severity: unmarshal YAML: %w", err)
+	}
+	parsed, err := ParseSeverity(str)
+	if err != nil {
+		return err
+	}
+	*s = parsed
+	return nil
+}
