@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"text/tabwriter"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
@@ -139,6 +138,6 @@ func printRecords(cmd *cobra.Command, records []types.MutationRecord) error {
 		return fmt.Errorf("flush output: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(os.Stderr)
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr())
 	return nil
 }
