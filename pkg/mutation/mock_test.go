@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -123,5 +124,126 @@ func (m *mockTransport) Hold(_ context.Context, key string, until time.Time) err
 
 func (m *mockTransport) Release(_ context.Context, key string) error {
 	m.record(call{Method: "Release", Key: key})
+	return nil
+}
+
+// stateCall records a single method invocation on the mock state store.
+type stateCall struct {
+	Method   string
+	Pipeline string
+	Key      string
+	Status   string
+	Sensor   adapter.SensorData
+	Trigger  adapter.TriggerKey
+}
+
+// mockStateStore implements adapter.StateStore and records all method calls.
+type mockStateStore struct {
+	mu    sync.Mutex
+	calls []stateCall
+
+	// sensors maps "pipeline/key" to SensorData.
+	sensors map[string]adapter.SensorData
+
+	// triggers maps "pipeline/schedule/date" to status string.
+	triggers map[string]string
+
+	// events stores written chaos events.
+	events []types.ChaosEvent
+
+	// readSensorErr causes ReadSensor to return an error.
+	readSensorErr bool
+
+	// writeSensorErr causes WriteSensor to return an error.
+	writeSensorErr bool
+
+	// writeTriggerStatusErr causes WriteTriggerStatus to return an error.
+	writeTriggerStatusErr bool
+}
+
+func newMockStateStore() *mockStateStore {
+	return &mockStateStore{
+		sensors:  make(map[string]adapter.SensorData),
+		triggers: make(map[string]string),
+	}
+}
+
+func (m *mockStateStore) recordCall(c stateCall) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, c)
+}
+
+func (m *mockStateStore) getStateCalls() []stateCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]stateCall, len(m.calls))
+	copy(result, m.calls)
+	return result
+}
+
+func (m *mockStateStore) stateCallCount(method string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	count := 0
+	for _, c := range m.calls {
+		if c.Method == method {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *mockStateStore) ReadSensor(_ context.Context, pipeline, key string) (adapter.SensorData, error) {
+	m.recordCall(stateCall{Method: "ReadSensor", Pipeline: pipeline, Key: key})
+	if m.readSensorErr {
+		return adapter.SensorData{}, fmt.Errorf("read sensor error")
+	}
+	sKey := pipeline + "/" + key
+	s, ok := m.sensors[sKey]
+	if !ok {
+		return adapter.SensorData{}, fmt.Errorf("sensor not found: %s/%s", pipeline, key)
+	}
+	return s, nil
+}
+
+func (m *mockStateStore) WriteSensor(_ context.Context, pipeline, key string, data adapter.SensorData) error {
+	m.recordCall(stateCall{Method: "WriteSensor", Pipeline: pipeline, Key: key, Sensor: data})
+	if m.writeSensorErr {
+		return fmt.Errorf("write sensor error")
+	}
+	m.mu.Lock()
+	m.sensors[pipeline+"/"+key] = data
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockStateStore) ReadTriggerStatus(_ context.Context, key adapter.TriggerKey) (string, error) {
+	m.recordCall(stateCall{Method: "ReadTriggerStatus", Pipeline: key.Pipeline, Key: key.Schedule, Trigger: key})
+	tKey := key.Pipeline + "/" + key.Schedule + "/" + key.Date
+	status, ok := m.triggers[tKey]
+	if !ok {
+		return "", fmt.Errorf("trigger not found: %s", tKey)
+	}
+	return status, nil
+}
+
+func (m *mockStateStore) WriteTriggerStatus(_ context.Context, key adapter.TriggerKey, status string) error {
+	m.recordCall(stateCall{Method: "WriteTriggerStatus", Pipeline: key.Pipeline, Key: key.Schedule, Status: status, Trigger: key})
+	if m.writeTriggerStatusErr {
+		return fmt.Errorf("write trigger status error")
+	}
+	tKey := key.Pipeline + "/" + key.Schedule + "/" + key.Date
+	m.mu.Lock()
+	m.triggers[tKey] = status
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockStateStore) WriteEvent(_ context.Context, event types.ChaosEvent) error {
+	m.recordCall(stateCall{Method: "WriteEvent", Pipeline: event.Scenario})
+	m.mu.Lock()
+	m.events = append(m.events, event)
+	m.mu.Unlock()
 	return nil
 }
