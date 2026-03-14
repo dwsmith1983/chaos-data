@@ -1,0 +1,38 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE / AI
+.idea/
+.vscode/
+.claude/
+.worktrees/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Build
+/build/
+/bin/
+deploy/dist/
