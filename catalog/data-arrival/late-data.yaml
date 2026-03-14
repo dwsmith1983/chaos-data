@@ -1,0 +1,26 @@
+name: late-data
+description: Hold data files and release them after a configurable delay, simulating late-arriving data from upstream systems.
+category: data-arrival
+severity: low
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: delay
+  params:
+    duration: "30m"
+    jitter: "5m"
+    release: "true"
+
+probability: 0.3
+
+safety:
+  max_affected_pct: 50
+  cooldown: 10m
+  sla_aware: true
