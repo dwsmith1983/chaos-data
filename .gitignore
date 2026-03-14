@@ -4,6 +4,9 @@
 *.dll
 *.so
 *.dylib
+/proxy
+/release
+/chaos-data
 
 # Test binary
 *.test

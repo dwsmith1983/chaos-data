@@ -2,10 +2,14 @@ package aws_test
 
 import (
 	"context"
+	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
+	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
 // mockS3API implements chaosaws.S3API with optional function fields.
@@ -80,6 +84,23 @@ func (m *mockDynamoDBAPI) Query(ctx context.Context, params *dynamodb.QueryInput
 	}
 	return &dynamodb.QueryOutput{}, nil
 }
+
+// noopTransport is a no-op adapter.DataTransport for testing components
+// that require an engine but don't need actual data operations.
+type noopTransport struct{}
+
+func (n *noopTransport) List(_ context.Context, _ string) ([]types.DataObject, error) {
+	return nil, nil
+}
+
+func (n *noopTransport) Read(_ context.Context, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(io.LimitReader(nil, 0)), nil
+}
+
+func (n *noopTransport) Write(_ context.Context, _ string, _ io.Reader) error { return nil }
+func (n *noopTransport) Delete(_ context.Context, _ string) error             { return nil }
+func (n *noopTransport) Hold(_ context.Context, _ string, _ time.Time) error  { return nil }
+func (n *noopTransport) Release(_ context.Context, _ string) error            { return nil }
 
 // mockEventBridgeAPI implements chaosaws.EventBridgeAPI with optional function fields.
 type mockEventBridgeAPI struct {
