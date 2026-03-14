@@ -1,0 +1,28 @@
+name: false-success
+description: Mark a job as succeeded even though it produced no output, simulating a silent failure where the job exits cleanly but writes nothing.
+category: orchestrator
+severity: critical
+version: 1
+
+target:
+  layer: orchestrator
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: false-success
+  params:
+    pipeline: ""
+    schedule: ""
+    date: ""
+    job_type: "glue"
+    missing_output: ""
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 10
+  cooldown: 30m
+  sla_aware: true

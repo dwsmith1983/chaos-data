@@ -1,0 +1,25 @@
+name: corrupt-records
+description: Inject null values into a percentage of records, simulating upstream data corruption or incomplete extraction.
+category: data-quality
+severity: moderate
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: corrupt
+  params:
+    affected_pct: "15"
+    corruption_type: "null"
+
+probability: 0.3
+
+safety:
+  max_affected_pct: 20
+  cooldown: 15m
+  sla_aware: true

@@ -1,0 +1,24 @@
+name: empty-file
+description: Replace a data file with an empty file containing no records or headers, simulating a zero-byte delivery from upstream.
+category: data-quality
+severity: moderate
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: empty
+  params:
+    preserve_header: "false"
+
+probability: 0.25
+
+safety:
+  max_affected_pct: 20
+  cooldown: 10m
+  sla_aware: true

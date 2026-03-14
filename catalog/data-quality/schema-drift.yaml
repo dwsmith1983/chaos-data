@@ -1,0 +1,26 @@
+name: schema-drift
+description: Add unexpected columns to the dataset schema, simulating unannounced upstream schema changes that break downstream consumers.
+category: data-quality
+severity: severe
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: schema-drift
+  params:
+    add_columns: "_chaos_injected"
+    remove_columns: ""
+    change_types: ""
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 15
+  cooldown: 25m
+  sla_aware: true

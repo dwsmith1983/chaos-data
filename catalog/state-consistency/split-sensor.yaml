@@ -1,0 +1,26 @@
+name: split-sensor
+description: Write conflicting values to the same sensor key, simulating a split-brain condition where multiple writers disagree on sensor state.
+category: state-consistency
+severity: severe
+version: 1
+
+target:
+  layer: state
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: split-sensor
+  params:
+    sensor_key: "arrival"
+    pipeline: ""
+    conflicting_values: "ready,pending,ready"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 10
+  cooldown: 25m
+  sla_aware: true

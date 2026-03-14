@@ -1,0 +1,26 @@
+name: cascade-delay
+description: Delay an upstream pipeline and propagate the impact through its sensor dependency, simulating a multi-stage pipeline stall.
+category: compound
+severity: severe
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: cascade-delay
+  params:
+    upstream_pipeline: ""
+    delay_duration: "2h"
+    sensor_key: "arrival"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 20
+  cooldown: 25m
+  sla_aware: true

@@ -1,0 +1,26 @@
+name: stale-sensor
+description: Set a sensor's last update timestamp far in the past, simulating a sensor that stopped receiving heartbeats from its upstream source.
+category: state-consistency
+severity: moderate
+version: 1
+
+target:
+  layer: state
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: stale-sensor
+  params:
+    sensor_key: "arrival"
+    pipeline: ""
+    last_update_age: "6h"
+
+probability: 0.3
+
+safety:
+  max_affected_pct: 20
+  cooldown: 15m
+  sla_aware: true

@@ -1,0 +1,27 @@
+name: phantom-trigger
+description: Fire a pipeline trigger without satisfying its data dependencies, simulating a scheduler race condition or manual mis-trigger.
+category: orchestrator
+severity: severe
+version: 1
+
+target:
+  layer: orchestrator
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: phantom-trigger
+  params:
+    pipeline: ""
+    schedule: ""
+    date: ""
+    trigger_type: "scheduled"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 10
+  cooldown: 30m
+  sla_aware: true

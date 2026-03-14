@@ -1,0 +1,25 @@
+name: duplicate-records
+description: Duplicate all records in the dataset, simulating an upstream double-delivery or idempotency failure.
+category: data-quality
+severity: low
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: duplicate
+  params:
+    dup_pct: "100"
+    exact: "true"
+
+probability: 0.35
+
+safety:
+  max_affected_pct: 50
+  cooldown: 10m
+  sla_aware: true

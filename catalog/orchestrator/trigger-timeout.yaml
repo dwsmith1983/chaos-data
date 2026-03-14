@@ -1,0 +1,27 @@
+name: trigger-timeout
+description: Force a pipeline trigger to exceed its expected completion window, simulating a hung or unresponsive upstream dependency.
+category: orchestrator
+severity: moderate
+version: 1
+
+target:
+  layer: orchestrator
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: trigger-timeout
+  params:
+    pipeline: ""
+    schedule: ""
+    date: ""
+    timeout_duration: "30m"
+
+probability: 0.3
+
+safety:
+  max_affected_pct: 20
+  cooldown: 15m
+  sla_aware: true

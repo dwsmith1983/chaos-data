@@ -1,0 +1,26 @@
+name: rolling-degradation
+description: Gradually increase the percentage of corrupted records over time, simulating a progressively failing upstream data source.
+category: compound
+severity: critical
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: rolling-degradation
+  params:
+    start_pct: "10"
+    end_pct: "50"
+    ramp_duration: "4h"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 50
+  cooldown: 30m
+  sla_aware: true

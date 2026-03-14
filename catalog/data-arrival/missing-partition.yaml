@@ -1,0 +1,24 @@
+name: missing-partition
+description: Drop an entire partition from the dataset, simulating a missing upstream partition that never arrived.
+category: data-arrival
+severity: moderate
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: drop
+  params:
+    scope: "partition"
+
+probability: 0.25
+
+safety:
+  max_affected_pct: 30
+  cooldown: 15m
+  sla_aware: true

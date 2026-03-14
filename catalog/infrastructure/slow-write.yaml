@@ -1,0 +1,25 @@
+name: slow-write
+description: Inject latency into write operations, simulating degraded storage or network performance in the data layer.
+category: infrastructure
+severity: low
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: slow-write
+  params:
+    latency: "5s"
+    jitter: "2s"
+
+probability: 0.4
+
+safety:
+  max_affected_pct: 40
+  cooldown: 5m
+  sla_aware: true

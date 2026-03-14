@@ -1,0 +1,26 @@
+name: out-of-order-arrival
+description: Delay and release data files out of chronological order, simulating upstream systems delivering batches in a non-sequential fashion.
+category: data-arrival
+severity: low
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: delay
+  params:
+    duration: "2h"
+    jitter: "30m"
+    release: "true"
+
+probability: 0.35
+
+safety:
+  max_affected_pct: 40
+  cooldown: 10m
+  sla_aware: true

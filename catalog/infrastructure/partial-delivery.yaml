@@ -1,0 +1,24 @@
+name: partial-delivery
+description: Deliver only a fraction of the expected data files, simulating a network interruption or partial upload from upstream.
+category: infrastructure
+severity: moderate
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: partial
+  params:
+    delivery_pct: "50"
+
+probability: 0.3
+
+safety:
+  max_affected_pct: 50
+  cooldown: 10m
+  sla_aware: true

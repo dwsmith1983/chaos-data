@@ -1,0 +1,25 @@
+name: streaming-lag
+description: Introduce consumer lag in streaming pipelines, simulating slow consumers or broker-side throttling.
+category: infrastructure
+severity: low
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: streaming-lag
+  params:
+    lag_duration: "15m"
+    consumer_group: "default"
+
+probability: 0.35
+
+safety:
+  max_affected_pct: 30
+  cooldown: 5m
+  sla_aware: true

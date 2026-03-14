@@ -1,0 +1,28 @@
+name: job-kill-midway
+description: Terminate a running job after it has processed half its data, simulating an infrastructure preemption or out-of-memory kill.
+category: orchestrator
+severity: critical
+version: 1
+
+target:
+  layer: orchestrator
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: job-kill
+  params:
+    pipeline: ""
+    schedule: ""
+    date: ""
+    kill_after_pct: "50"
+    job_type: "glue"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 10
+  cooldown: 30m
+  sla_aware: true

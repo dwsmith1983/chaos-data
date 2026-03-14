@@ -1,0 +1,26 @@
+name: phantom-sensor
+description: Create a sensor entry that reports ready status without any actual data delivery, simulating a false-positive arrival signal.
+category: state-consistency
+severity: severe
+version: 1
+
+target:
+  layer: state
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: phantom-sensor
+  params:
+    pipeline: ""
+    sensor_key: "arrival"
+    status: "ready"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 15
+  cooldown: 20m
+  sla_aware: true

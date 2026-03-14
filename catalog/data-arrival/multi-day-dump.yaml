@@ -1,0 +1,24 @@
+name: multi-day-dump
+description: Deliver multiple days of data in a single batch, simulating a backfill or catch-up dump from an upstream system.
+category: data-arrival
+severity: moderate
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: multi-day
+  params:
+    days: "2024-01-15,2024-01-16,2024-01-17"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 35
+  cooldown: 15m
+  sla_aware: true
