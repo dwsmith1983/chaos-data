@@ -36,3 +36,12 @@ Thumbs.db
 /build/
 /bin/
 deploy/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.coverage
+dist/
+*.whl
