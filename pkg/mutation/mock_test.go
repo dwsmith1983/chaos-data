@@ -132,6 +132,11 @@ func (m *mockTransport) ListHeld(_ context.Context) ([]types.DataObject, error) 
 	return nil, nil
 }
 
+func (m *mockTransport) ReleaseAll(_ context.Context) error {
+	m.record(call{Method: "ReleaseAll"})
+	return nil
+}
+
 // stateCall records a single method invocation on the mock state store.
 type stateCall struct {
 	Method   string

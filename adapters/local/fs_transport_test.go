@@ -605,6 +605,97 @@ func TestFSTransport_ListHeld_HoldDirAbsent(t *testing.T) {
 	}
 }
 
+func TestFSTransport_ReleaseAll_EmptyHoldDir(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Create an empty hold directory.
+	holdDir := filepath.Join(stagingDir, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	tr := local.NewFSTransport(stagingDir, outputDir)
+	if err := tr.ReleaseAll(context.Background()); err != nil {
+		t.Fatalf("ReleaseAll() error = %v, want nil for empty hold dir", err)
+	}
+}
+
+func TestFSTransport_ReleaseAll_ReleasesAllHeld(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Create 3 files in staging, then hold each.
+	keys := []string{"alpha.csv", "beta.csv", "gamma.csv"}
+	for _, key := range keys {
+		if err := os.WriteFile(filepath.Join(stagingDir, key), []byte("data:"+key), 0o644); err != nil {
+			t.Fatalf("setup: write %s: %v", key, err)
+		}
+	}
+
+	tr := local.NewFSTransport(stagingDir, outputDir)
+	until := time.Now().Add(1 * time.Hour)
+	for _, key := range keys {
+		if err := tr.Hold(context.Background(), key, until); err != nil {
+			t.Fatalf("Hold(%s) error = %v", key, err)
+		}
+	}
+
+	// Verify all are held.
+	held, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() before ReleaseAll: %v", err)
+	}
+	if len(held) != 3 {
+		t.Fatalf("expected 3 held files before ReleaseAll, got %d", len(held))
+	}
+
+	// ReleaseAll should move all to outputDir.
+	if err := tr.ReleaseAll(context.Background()); err != nil {
+		t.Fatalf("ReleaseAll() error = %v", err)
+	}
+
+	// No files should remain held.
+	held, err = tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() after ReleaseAll: %v", err)
+	}
+	if len(held) != 0 {
+		t.Errorf("expected 0 held files after ReleaseAll, got %d: %v", len(held), held)
+	}
+
+	// All files should be in outputDir.
+	holdDir := filepath.Join(stagingDir, ".chaos-hold")
+	for _, key := range keys {
+		// File is in outputDir.
+		if _, err := os.Stat(filepath.Join(outputDir, key)); err != nil {
+			t.Errorf("key %q not found in outputDir: %v", key, err)
+		}
+		// File is not in holdDir.
+		if _, err := os.Stat(filepath.Join(holdDir, key)); !os.IsNotExist(err) {
+			t.Errorf("key %q still in holdDir after ReleaseAll", key)
+		}
+		// .meta sidecar is cleaned up.
+		if _, err := os.Stat(filepath.Join(holdDir, key+".meta")); !os.IsNotExist(err) {
+			t.Errorf(".meta for %q still in holdDir after ReleaseAll", key)
+		}
+	}
+}
+
+func TestFSTransport_ReleaseAll_NoHoldDirExists(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Do NOT create .chaos-hold — it should not exist.
+	tr := local.NewFSTransport(stagingDir, outputDir)
+	if err := tr.ReleaseAll(context.Background()); err != nil {
+		t.Fatalf("ReleaseAll() error = %v, want nil when hold dir does not exist", err)
+	}
+}
+
 func TestFSTransport_PathTraversal(t *testing.T) {
 	t.Parallel()
 

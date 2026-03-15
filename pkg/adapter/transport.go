@@ -30,4 +30,11 @@ type DataTransport interface {
 	// ListHeld returns DataObjects currently in hold state. Implementations
 	// should exclude metadata sidecars from the result.
 	ListHeld(ctx context.Context) ([]types.DataObject, error)
+
+	// ReleaseAll immediately releases all currently held objects, making
+	// them visible to downstream consumers. It is a best-effort, fail-open
+	// operation: individual Release failures are collected and returned via
+	// errors.Join but do not prevent remaining releases from being attempted.
+	// This is intended as a kill-switch safety mechanism.
+	ReleaseAll(ctx context.Context) error
 }

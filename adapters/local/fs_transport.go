@@ -216,6 +216,27 @@ func (t *FSTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
 	return objects, nil
 }
 
+// ReleaseAll immediately releases all currently held objects. It calls
+// ListHeld to enumerate held objects, then calls Release on each. Failures
+// from individual Release calls are collected and returned via errors.Join
+// so that a single failure does not prevent the remaining releases.
+// If the hold directory does not exist, ReleaseAll returns nil without error.
+func (t *FSTransport) ReleaseAll(ctx context.Context) error {
+	held, err := t.ListHeld(ctx)
+	if err != nil {
+		return fmt.Errorf("release all: list held: %w", err)
+	}
+
+	var errs []error
+	for _, obj := range held {
+		if releaseErr := t.Release(ctx, obj.Key); releaseErr != nil {
+			errs = append(errs, releaseErr)
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
 // Release moves a file from holdDir to outputDir and removes the .meta
 // sidecar file. A missing .meta file is tolerated (not treated as an error).
 // Returns an error if key would escape the hold or output directories.

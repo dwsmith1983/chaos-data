@@ -747,6 +747,95 @@ func TestS3Transport_ListHeld_Error(t *testing.T) {
 	}
 }
 
+// --- ReleaseAll tests ---
+
+func TestS3Transport_ReleaseAll_EmptyHold(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, params *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			if aws.ToString(params.Bucket) != "pipeline-bucket" {
+				t.Errorf("ListObjectsV2 bucket = %q, want %q", aws.ToString(params.Bucket), "pipeline-bucket")
+			}
+			if aws.ToString(params.Prefix) != "chaos-hold/" {
+				t.Errorf("ListObjectsV2 prefix = %q, want %q", aws.ToString(params.Prefix), "chaos-hold/")
+			}
+			return &s3.ListObjectsV2Output{Contents: nil}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	if err := tr.ReleaseAll(context.Background()); err != nil {
+		t.Fatalf("ReleaseAll() error = %v, want nil for empty hold", err)
+	}
+}
+
+func TestS3Transport_ReleaseAll_ReleasesAll(t *testing.T) {
+	t.Parallel()
+
+	var releasedKeys []string
+
+	mock := &mockS3API{
+		// ListObjectsV2 returns 2 held objects (plus their .meta sidecars, which
+		// should be excluded from the keys passed to Release).
+		ListObjectsV2Fn: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{
+				Contents: []s3types.Object{
+					{Key: aws.String("chaos-hold/file1.csv")},
+					{Key: aws.String("chaos-hold/file1.csv.meta")},
+					{Key: aws.String("chaos-hold/file2.csv")},
+					{Key: aws.String("chaos-hold/file2.csv.meta")},
+				},
+			}, nil
+		},
+		// GetObject is called by Release to read the .meta sidecar.
+		GetObjectFn: func(_ context.Context, params *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+			key := aws.ToString(params.Key)
+			// Return a valid meta for each sidecar lookup.
+			switch key {
+			case "chaos-hold/file1.csv.meta":
+				return &s3.GetObjectOutput{
+					Body: io.NopCloser(strings.NewReader(`{"release_at":"2025-07-01T00:00:00Z","original_key":"file1.csv"}`)),
+				}, nil
+			case "chaos-hold/file2.csv.meta":
+				return &s3.GetObjectOutput{
+					Body: io.NopCloser(strings.NewReader(`{"release_at":"2025-07-01T00:00:00Z","original_key":"file2.csv"}`)),
+				}, nil
+			}
+			return nil, errors.New("no such key")
+		},
+		// CopyObject is called by Release to move object to destination.
+		CopyObjectFn: func(_ context.Context, params *s3.CopyObjectInput, _ ...func(*s3.Options)) (*s3.CopyObjectOutput, error) {
+			releasedKeys = append(releasedKeys, aws.ToString(params.Key))
+			return &s3.CopyObjectOutput{}, nil
+		},
+		// DeleteObject is called by Release to remove held object and .meta.
+		DeleteObjectFn: func(_ context.Context, _ *s3.DeleteObjectInput, _ ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+			return &s3.DeleteObjectOutput{}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	if err := tr.ReleaseAll(context.Background()); err != nil {
+		t.Fatalf("ReleaseAll() error = %v", err)
+	}
+
+	// Both data files should have been released (CopyObject called for each).
+	if len(releasedKeys) != 2 {
+		t.Fatalf("expected 2 release copy calls, got %d: %v", len(releasedKeys), releasedKeys)
+	}
+
+	releasedSet := make(map[string]bool, len(releasedKeys))
+	for _, k := range releasedKeys {
+		releasedSet[k] = true
+	}
+	for _, want := range []string{"file1.csv", "file2.csv"} {
+		if !releasedSet[want] {
+			t.Errorf("ReleaseAll() did not release %q", want)
+		}
+	}
+}
+
 func TestS3Transport_Release_CopyFails(t *testing.T) {
 	t.Parallel()
 

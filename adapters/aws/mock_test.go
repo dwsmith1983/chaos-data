@@ -109,7 +109,8 @@ func (n *noopTransport) Write(_ context.Context, _ string, _ io.Reader) error   
 func (n *noopTransport) Delete(_ context.Context, _ string) error                    { return nil }
 func (n *noopTransport) Hold(_ context.Context, _ string, _ time.Time) error         { return nil }
 func (n *noopTransport) Release(_ context.Context, _ string) error                   { return nil }
-func (n *noopTransport) ListHeld(_ context.Context) ([]types.DataObject, error) { return nil, nil }
+func (n *noopTransport) ListHeld(_ context.Context) ([]types.DataObject, error)  { return nil, nil }
+func (n *noopTransport) ReleaseAll(_ context.Context) error                       { return nil }
 
 // mockEventBridgeAPI implements chaosaws.EventBridgeAPI with optional function fields.
 type mockEventBridgeAPI struct {

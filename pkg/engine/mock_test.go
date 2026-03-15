@@ -12,8 +12,8 @@ import (
 
 // Compile-time interface assertions.
 var (
-	_ adapter.DataTransport   = (*mockTransport)(nil)
-	_ adapter.EventEmitter    = (*mockEmitter)(nil)
+	_ adapter.DataTransport    = (*mockTransport)(nil)
+	_ adapter.EventEmitter     = (*mockEmitter)(nil)
 	_ adapter.SafetyController = (*mockSafety)(nil)
 )
 
@@ -21,12 +21,13 @@ var (
 type mockTransport struct {
 	mu sync.Mutex
 
-	listFn    func(ctx context.Context, prefix string) ([]types.DataObject, error)
-	readFn    func(ctx context.Context, key string) (io.ReadCloser, error)
-	writeFn   func(ctx context.Context, key string, data io.Reader) error
-	deleteFn  func(ctx context.Context, key string) error
-	holdFn    func(ctx context.Context, key string, until time.Time) error
-	releaseFn func(ctx context.Context, key string) error
+	listFn       func(ctx context.Context, prefix string) ([]types.DataObject, error)
+	readFn       func(ctx context.Context, key string) (io.ReadCloser, error)
+	writeFn      func(ctx context.Context, key string, data io.Reader) error
+	deleteFn     func(ctx context.Context, key string) error
+	holdFn       func(ctx context.Context, key string, until time.Time) error
+	releaseFn    func(ctx context.Context, key string) error
+	releaseAllFn func(ctx context.Context) error
 
 	holdCalls []holdCall
 }
@@ -83,6 +84,13 @@ func (m *mockTransport) Release(ctx context.Context, key string) error {
 
 func (m *mockTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
 	return nil, nil
+}
+
+func (m *mockTransport) ReleaseAll(ctx context.Context) error {
+	if m.releaseAllFn != nil {
+		return m.releaseAllFn(ctx)
+	}
+	return nil
 }
 
 // mockEmitter is a test double for adapter.EventEmitter.
