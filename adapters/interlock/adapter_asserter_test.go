@@ -2,6 +2,7 @@ package interlock_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/adapters/interlock"
@@ -206,6 +207,118 @@ func TestAdapterAsserter_EventEmitted_NotFound(t *testing.T) {
 	}
 	if ok {
 		t.Error("expected false (event not found)")
+	}
+}
+
+func TestAdapterAsserter_TriggerState_Success(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.triggers["pipeline-a/hourly/2024-01-15"] = "succeeded"
+	reader := newMockEventReader()
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertTriggerState, Target: "pipeline-a/hourly/2024-01-15", Condition: types.CondStatusSuccess,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected true (trigger succeeded)")
+	}
+}
+
+func TestAdapterAsserter_TriggerState_Killed(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.triggers["pipeline-a/hourly/2024-01-15"] = "killed"
+	reader := newMockEventReader()
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertTriggerState, Target: "pipeline-a/hourly/2024-01-15", Condition: types.CondStatusKilled,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected true (trigger killed)")
+	}
+}
+
+func TestAdapterAsserter_TriggerState_Timeout(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.triggers["pipeline-a/hourly/2024-01-15"] = "timeout"
+	reader := newMockEventReader()
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertTriggerState, Target: "pipeline-a/hourly/2024-01-15", Condition: types.CondStatusTimeout,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected true (trigger timeout)")
+	}
+}
+
+func TestAdapterAsserter_TriggerState_ReadError(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	// trigger not in map → ReadTriggerStatus returns error
+	reader := newMockEventReader()
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertTriggerState, Target: "missing/sched/date", Condition: types.CondStatusFailed,
+	})
+	if err == nil {
+		t.Fatal("expected error when trigger not found")
+	}
+}
+
+func TestAdapterAsserter_SensorState_MalformedTarget(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	reader := newMockEventReader()
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertSensorState, Target: "no-slash", Condition: types.CondIsStale,
+	})
+	if err == nil {
+		t.Fatal("expected error for malformed sensor target")
+	}
+}
+
+func TestAdapterAsserter_EventEmitted_MalformedTarget(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	reader := newMockEventReader()
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertEventEmitted, Target: "no-slash", Condition: types.CondExists,
+	})
+	if err == nil {
+		t.Fatal("expected error for malformed event target")
+	}
+}
+
+func TestAdapterAsserter_EventEmitted_ManifestError(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	reader := newMockEventReader()
+	reader.err = fmt.Errorf("manifest unavailable")
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertEventEmitted, Target: "sc/mut", Condition: types.CondExists,
+	})
+	if err == nil {
+		t.Fatal("expected error when manifest fails")
 	}
 }
 
