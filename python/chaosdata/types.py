@@ -116,3 +116,13 @@ class ExperimentStats:
     affected_pct: float = 0.0
     start_time: str = ""
     end_time: str = ""
+
+
+@dataclass(frozen=True)
+class ExperimentStatus:
+    """Status of a running or completed experiment."""
+
+    experiment_id: str = ""
+    state: str = ""
+    elapsed: str = ""
+    events: int = 0

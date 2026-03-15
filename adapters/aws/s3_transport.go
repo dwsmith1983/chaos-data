@@ -193,6 +193,52 @@ func (t *S3Transport) Hold(ctx context.Context, key string, until time.Time) err
 	return nil
 }
 
+// ListHeld returns DataObjects currently held under the hold prefix,
+// excluding .meta sidecars. Keys are returned relative to the hold
+// prefix. Pagination is handled transparently via continuation tokens.
+func (t *S3Transport) ListHeld(ctx context.Context) ([]types.DataObject, error) {
+	var objects []types.DataObject
+	var continuationToken *string
+
+	for {
+		input := &s3.ListObjectsV2Input{
+			Bucket:            aws.String(t.pipelineBucket),
+			Prefix:            aws.String(t.holdPrefix),
+			ContinuationToken: continuationToken,
+		}
+
+		out, err := t.api.ListObjectsV2(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("list held objects in %s/%s: %w", t.pipelineBucket, t.holdPrefix, err)
+		}
+
+		for _, obj := range out.Contents {
+			key := aws.ToString(obj.Key)
+			if strings.HasSuffix(key, ".meta") {
+				continue
+			}
+			relativeKey := strings.TrimPrefix(key, t.holdPrefix)
+			do := types.DataObject{
+				Key: relativeKey,
+			}
+			if obj.Size != nil {
+				do.Size = *obj.Size
+			}
+			if obj.LastModified != nil {
+				do.LastModified = *obj.LastModified
+			}
+			objects = append(objects, do)
+		}
+
+		if !aws.ToBool(out.IsTruncated) {
+			break
+		}
+		continuationToken = out.NextContinuationToken
+	}
+
+	return objects, nil
+}
+
 // Release copies a held object from the pipeline hold prefix to its
 // original key in the pipeline bucket, then removes the held object and
 // .meta sidecar.

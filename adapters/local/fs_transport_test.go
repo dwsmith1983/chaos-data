@@ -495,6 +495,116 @@ func TestFSTransport_Release_MissingHeldFile(t *testing.T) {
 	}
 }
 
+func TestFSTransport_ListHeld_Empty(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Create an empty hold directory.
+	holdDir := filepath.Join(stagingDir, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	tr := local.NewFSTransport(stagingDir, outputDir)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(objs) != 0 {
+		t.Errorf("ListHeld() returned %d objects, want 0", len(objs))
+	}
+}
+
+func TestFSTransport_ListHeld_WithHeldFiles(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Create files in the hold directory.
+	holdDir := filepath.Join(stagingDir, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	for _, name := range []string{"data1.csv", "data2.csv"} {
+		if err := os.WriteFile(filepath.Join(holdDir, name), []byte("held content"), 0o644); err != nil {
+			t.Fatalf("setup: write %s: %v", name, err)
+		}
+	}
+
+	tr := local.NewFSTransport(stagingDir, outputDir)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(objs) != 2 {
+		t.Fatalf("ListHeld() returned %d objects, want 2", len(objs))
+	}
+
+	gotKeys := make(map[string]bool, len(objs))
+	for _, o := range objs {
+		gotKeys[o.Key] = true
+		if o.Size != int64(len("held content")) {
+			t.Errorf("object %q Size = %d, want %d", o.Key, o.Size, len("held content"))
+		}
+		if o.LastModified.IsZero() {
+			t.Errorf("object %q LastModified is zero", o.Key)
+		}
+	}
+	for _, want := range []string{"data1.csv", "data2.csv"} {
+		if !gotKeys[want] {
+			t.Errorf("ListHeld() missing expected key %q", want)
+		}
+	}
+}
+
+func TestFSTransport_ListHeld_ExcludesMeta(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	holdDir := filepath.Join(stagingDir, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Create a data file and its .meta sidecar.
+	if err := os.WriteFile(filepath.Join(holdDir, "data.csv"), []byte("data"), 0o644); err != nil {
+		t.Fatalf("setup: write data.csv: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(holdDir, "data.csv.meta"), []byte(`{"release_at":"2025-07-01T00:00:00Z"}`), 0o644); err != nil {
+		t.Fatalf("setup: write data.csv.meta: %v", err)
+	}
+
+	tr := local.NewFSTransport(stagingDir, outputDir)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(objs))
+	}
+	if objs[0].Key != "data.csv" {
+		t.Errorf("ListHeld() key = %q, want %q", objs[0].Key, "data.csv")
+	}
+}
+
+func TestFSTransport_ListHeld_HoldDirAbsent(t *testing.T) {
+	t.Parallel()
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Do NOT create the .chaos-hold directory — it should not exist.
+	tr := local.NewFSTransport(stagingDir, outputDir)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v, want nil for absent hold dir", err)
+	}
+	if len(objs) != 0 {
+		t.Errorf("ListHeld() returned %d objects, want 0", len(objs))
+	}
+}
+
 func TestFSTransport_PathTraversal(t *testing.T) {
 	t.Parallel()
 

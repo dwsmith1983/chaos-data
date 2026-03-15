@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
@@ -226,5 +227,60 @@ func TestRunProbabilistic_MultipleIterationsAccumulateRecords(t *testing.T) {
 	events := emitter.getEvents()
 	if len(events) != len(records) {
 		t.Errorf("events count %d != records count %d", len(events), len(records))
+	}
+}
+
+func TestProbabilisticIteration_SkipsOnCooldown(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{
+				newTestObject("a.csv"),
+			}, nil
+		},
+	}
+	emitter := &mockEmitter{}
+	safety := &mockSafety{
+		enabled:     true,
+		maxSev:      types.SeverityCritical,
+		cooldownErr: adapter.ErrCooldownActive,
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	sc := newDelayScenario("always-delay", types.SeverityLow)
+	sc.Probability = 1.0
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		[]scenario.Scenario{sc},
+		engine.WithEmitter(emitter),
+		engine.WithSafety(safety),
+	)
+
+	rng := rand.New(rand.NewSource(42)) //nolint:gosec
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	records, err := eng.RunProbabilistic(ctx, 50*time.Millisecond, rng)
+	if err != nil {
+		t.Fatalf("RunProbabilistic() error = %v", err)
+	}
+
+	// All scenarios should be skipped due to cooldown.
+	if len(records) != 0 {
+		t.Errorf("expected 0 records (cooldown active), got %d", len(records))
+	}
+
+	events := emitter.getEvents()
+	if len(events) != 0 {
+		t.Errorf("expected 0 events, got %d", len(events))
 	}
 }

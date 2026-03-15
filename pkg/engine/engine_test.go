@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
@@ -559,5 +560,234 @@ func TestRun_StopsOnContextCancellation(t *testing.T) {
 	_, err := eng.Run(ctx)
 	if err == nil {
 		t.Fatal("Run() error = nil, want context cancellation error")
+	}
+}
+
+// --- Step 8: Dry-run mode tests ---
+
+func TestProcessObject_DryRunSkipsApply(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{}
+	emitter := &mockEmitter{}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	cfg := defaultConfig()
+	cfg.DryRun = true
+
+	eng := engine.New(
+		cfg,
+		transport,
+		reg,
+		scenarios,
+		engine.WithEmitter(emitter),
+	)
+
+	obj := newTestObject("data.csv")
+	records, err := eng.ProcessObject(context.Background(), obj)
+	if err != nil {
+		t.Fatalf("ProcessObject() error = %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	if rec.ObjectKey != "data.csv" {
+		t.Errorf("record ObjectKey = %q, want %q", rec.ObjectKey, "data.csv")
+	}
+	if rec.Mutation != "delay" {
+		t.Errorf("record Mutation = %q, want %q", rec.Mutation, "delay")
+	}
+	if rec.Applied {
+		t.Error("record Applied = true, want false in dry-run mode")
+	}
+	if rec.Error != "dry-run" {
+		t.Errorf("record Error = %q, want %q", rec.Error, "dry-run")
+	}
+
+	// Verify transport.Hold was NOT called (mutation not actually applied).
+	transport.mu.Lock()
+	holdCount := len(transport.holdCalls)
+	transport.mu.Unlock()
+	if holdCount != 0 {
+		t.Errorf("transport.Hold called %d times, want 0 in dry-run mode", holdCount)
+	}
+
+	// Verify emitter.Emit WAS called (we still observe what would happen).
+	events := emitter.getEvents()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Scenario != "test-delay" {
+		t.Errorf("event Scenario = %q, want %q", events[0].Scenario, "test-delay")
+	}
+}
+
+func TestProcessObject_DryRunStillChecksSafety(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{}
+	emitter := &mockEmitter{}
+	safety := &mockSafety{enabled: false, maxSev: types.SeverityCritical}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	cfg := defaultConfig()
+	cfg.DryRun = true
+
+	eng := engine.New(
+		cfg,
+		transport,
+		reg,
+		scenarios,
+		engine.WithEmitter(emitter),
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.ProcessObject(context.Background(), newTestObject("data.csv"))
+	if err != nil {
+		t.Fatalf("ProcessObject() error = %v", err)
+	}
+	if len(records) != 0 {
+		t.Errorf("expected 0 records (kill switch disabled), got %d", len(records))
+	}
+
+	events := emitter.getEvents()
+	if len(events) != 0 {
+		t.Errorf("expected 0 events, got %d", len(events))
+	}
+}
+
+// --- Cooldown integration tests ---
+
+func TestProcessObject_SkipsOnCooldown(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{}
+	emitter := &mockEmitter{}
+	safety := &mockSafety{
+		enabled:     true,
+		maxSev:      types.SeverityCritical,
+		cooldownErr: adapter.ErrCooldownActive,
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithEmitter(emitter),
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.ProcessObject(context.Background(), newTestObject("data.csv"))
+	if err != nil {
+		t.Fatalf("ProcessObject() error = %v", err)
+	}
+	if len(records) != 0 {
+		t.Errorf("expected 0 records (cooldown active), got %d", len(records))
+	}
+
+	events := emitter.getEvents()
+	if len(events) != 0 {
+		t.Errorf("expected 0 events, got %d", len(events))
+	}
+}
+
+func TestProcessObject_RecordsInjectionAfterApply(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{}
+	emitter := &mockEmitter{}
+	safety := &mockSafety{
+		enabled: true,
+		maxSev:  types.SeverityCritical,
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithEmitter(emitter),
+		engine.WithSafety(safety),
+	)
+
+	_, err := eng.ProcessObject(context.Background(), newTestObject("data.csv"))
+	if err != nil {
+		t.Fatalf("ProcessObject() error = %v", err)
+	}
+
+	safety.mu.Lock()
+	calls := make([]string, len(safety.recordInjCalls))
+	copy(calls, safety.recordInjCalls)
+	safety.mu.Unlock()
+
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 RecordInjection call, got %d", len(calls))
+	}
+	if calls[0] != "test-delay" {
+		t.Errorf("RecordInjection called with %q, want %q", calls[0], "test-delay")
+	}
+}
+
+func TestProcessObject_CooldownErrorPropagatesNonSentinel(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{}
+	dbErr := errors.New("db down")
+	safety := &mockSafety{
+		enabled:     true,
+		maxSev:      types.SeverityCritical,
+		cooldownErr: dbErr,
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithSafety(safety),
+	)
+
+	_, err := eng.ProcessObject(context.Background(), newTestObject("data.csv"))
+	if err == nil {
+		t.Fatal("ProcessObject() error = nil, want error for non-sentinel cooldown error")
+	}
+	if !errors.Is(err, dbErr) {
+		t.Errorf("error = %v, want wrapped %v", err, dbErr)
 	}
 }

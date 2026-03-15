@@ -50,7 +50,7 @@ func main() {
 	transport := chaosaws.NewS3Transport(s3Client, cfg)
 	state := chaosaws.NewDynamoDBState(dynamoClient, tableName)
 	emitter := chaosaws.NewEventBridgeEmitter(ebClient, eventBusName)
-	safety := chaosaws.NewDynamoDBSafety(dynamoClient, tableName)
+	safety := chaosaws.NewDynamoDBSafety(dynamoClient, tableName, types.Defaults().Safety.CooldownDuration.Duration)
 
 	// Suppress unused variable warnings for state — it will be used
 	// when the engine supports state stores.

@@ -39,3 +39,13 @@ func ChaosSK(ts time.Time, eventID string) string {
 func ControlPK(name string) string {
 	return "CONTROL#" + name
 }
+
+// CooldownPK returns the partition key for a cooldown record.
+func CooldownPK() string {
+	return "CONTROL#cooldown"
+}
+
+// CooldownSK returns the sort key for a cooldown record.
+func CooldownSK(scenario string) string {
+	return scenario
+}

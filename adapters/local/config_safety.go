@@ -3,6 +3,8 @@ package local
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -19,12 +21,22 @@ var _ adapter.SafetyController = (*ConfigSafety)(nil)
 // relied upon for production safety decisions. Production adapters must
 // implement actual SLA-window checking against a live schedule source.
 type ConfigSafety struct {
-	config types.SafetyConfig
+	config       types.SafetyConfig
+	mu           sync.Mutex
+	lastInjected map[string]time.Time
+
+	// Now returns the current time. It defaults to time.Now and can be
+	// overridden in tests to control time-dependent behavior.
+	Now func() time.Time
 }
 
 // NewConfigSafety creates a ConfigSafety from the given SafetyConfig.
 func NewConfigSafety(config types.SafetyConfig) *ConfigSafety {
-	return &ConfigSafety{config: config}
+	return &ConfigSafety{
+		config:       config,
+		lastInjected: make(map[string]time.Time),
+		Now:          time.Now,
+	}
 }
 
 // IsEnabled returns the KillSwitchEnabled value from the config.
@@ -60,4 +72,32 @@ func (c *ConfigSafety) CheckBlastRadius(_ context.Context, stats types.Experimen
 // There is no real SLA enforcement in the local adapter.
 func (c *ConfigSafety) CheckSLAWindow(_ context.Context, _ string) (bool, error) {
 	return true, nil
+}
+
+// CheckCooldown checks whether the scenario is within its cooldown period.
+// Returns adapter.ErrCooldownActive when the scenario was injected within
+// the configured CooldownDuration. A nil return means the scenario may proceed.
+func (c *ConfigSafety) CheckCooldown(_ context.Context, scenario string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	last, ok := c.lastInjected[scenario]
+	if !ok {
+		return nil
+	}
+
+	elapsed := c.Now().Sub(last)
+	if elapsed < c.config.CooldownDuration.Duration {
+		return adapter.ErrCooldownActive
+	}
+	return nil
+}
+
+// RecordInjection records the current time as the last injection for a scenario.
+func (c *ConfigSafety) RecordInjection(_ context.Context, scenario string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.lastInjected[scenario] = c.Now()
+	return nil
 }

@@ -160,6 +160,47 @@ func (s *DynamoDBState) WriteEvent(ctx context.Context, event types.ChaosEvent) 
 	return nil
 }
 
+// DeleteSensor removes the sensor record for the given pipeline and key.
+func (s *DynamoDBState) DeleteSensor(ctx context.Context, pipeline, key string) error {
+	_, err := s.api.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: &s.tableName,
+		Key: map[string]dynamodbtypes.AttributeValue{
+			"PK": &dynamodbtypes.AttributeValueMemberS{Value: SensorPK(pipeline)},
+			"SK": &dynamodbtypes.AttributeValueMemberS{Value: SensorSK(key)},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("dynamodb delete sensor: %w", err)
+	}
+	return nil
+}
+
+// ReadChaosEvents returns all chaos events for the given experiment ID.
+func (s *DynamoDBState) ReadChaosEvents(ctx context.Context, experimentID string) ([]types.ChaosEvent, error) {
+	pk := ChaosPK(experimentID)
+	expr := "PK = :pk"
+	out, err := s.api.Query(ctx, &dynamodb.QueryInput{
+		TableName:              &s.tableName,
+		KeyConditionExpression: &expr,
+		ExpressionAttributeValues: map[string]dynamodbtypes.AttributeValue{
+			":pk": &dynamodbtypes.AttributeValueMemberS{Value: pk},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb read chaos events: %w", err)
+	}
+
+	events := make([]types.ChaosEvent, 0, len(out.Items))
+	for _, item := range out.Items {
+		event, err := unmarshalChaosEvent(item)
+		if err != nil {
+			return nil, fmt.Errorf("dynamodb read chaos events: %w", err)
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
 // unmarshalSensorData converts a DynamoDB item map to an adapter.SensorData.
 func unmarshalSensorData(item map[string]dynamodbtypes.AttributeValue) (adapter.SensorData, error) {
 	var data adapter.SensorData
@@ -200,4 +241,75 @@ func unmarshalSensorData(item map[string]dynamodbtypes.AttributeValue) (adapter.
 	}
 
 	return data, nil
+}
+
+// unmarshalChaosEvent converts a DynamoDB item map to a types.ChaosEvent.
+func unmarshalChaosEvent(item map[string]dynamodbtypes.AttributeValue) (types.ChaosEvent, error) {
+	var event types.ChaosEvent
+
+	if v, ok := item["id"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.ID = sv.Value
+		}
+	}
+	if v, ok := item["experiment_id"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.ExperimentID = sv.Value
+		}
+	}
+	if v, ok := item["scenario"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Scenario = sv.Value
+		}
+	}
+	if v, ok := item["category"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Category = sv.Value
+		}
+	}
+	if v, ok := item["severity"]; ok {
+		if nv, ok := v.(*dynamodbtypes.AttributeValueMemberN); ok {
+			n, err := strconv.Atoi(nv.Value)
+			if err != nil {
+				return types.ChaosEvent{}, fmt.Errorf("parse severity: %w", err)
+			}
+			event.Severity = types.Severity(n)
+		}
+	}
+	if v, ok := item["target"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Target = sv.Value
+		}
+	}
+	if v, ok := item["mutation"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Mutation = sv.Value
+		}
+	}
+	if v, ok := item["timestamp"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			t, err := time.Parse(time.RFC3339Nano, sv.Value)
+			if err != nil {
+				return types.ChaosEvent{}, fmt.Errorf("parse timestamp: %w", err)
+			}
+			event.Timestamp = t
+		}
+	}
+	if v, ok := item["mode"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Mode = sv.Value
+		}
+	}
+	if v, ok := item["params"]; ok {
+		if mv, ok := v.(*dynamodbtypes.AttributeValueMemberM); ok {
+			event.Params = make(map[string]string, len(mv.Value))
+			for k, av := range mv.Value {
+				if sv, ok := av.(*dynamodbtypes.AttributeValueMemberS); ok {
+					event.Params[k] = sv.Value
+				}
+			}
+		}
+	}
+
+	return event, nil
 }

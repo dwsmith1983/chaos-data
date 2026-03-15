@@ -2,9 +2,12 @@ package local_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -207,6 +210,78 @@ func TestConfigSafety_CheckSLAWindow(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("CheckSLAWindow() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfigSafety_Cooldown(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		setup   func(cs *local.ConfigSafety)
+		now     time.Time
+		wantErr bool
+	}{
+		{
+			name:    "CheckCooldown_NoPriorInjection",
+			setup:   func(_ *local.ConfigSafety) {},
+			now:     time.Now(),
+			wantErr: false,
+		},
+		{
+			name: "CheckCooldown_ActiveCooldown",
+			setup: func(cs *local.ConfigSafety) {
+				// Record an injection at "now - 1 minute" so the 5-min cooldown is active.
+				cs.Now = func() time.Time { return time.Now().Add(-1 * time.Minute) }
+				if err := cs.RecordInjection(context.Background(), "sc-1"); err != nil {
+					panic(err)
+				}
+			},
+			now:     time.Now(),
+			wantErr: true,
+		},
+		{
+			name: "CheckCooldown_ExpiredCooldown",
+			setup: func(cs *local.ConfigSafety) {
+				// Record an injection at "now - 10 minutes" so the 5-min cooldown has expired.
+				cs.Now = func() time.Time { return time.Now().Add(-10 * time.Minute) }
+				if err := cs.RecordInjection(context.Background(), "sc-1"); err != nil {
+					panic(err)
+				}
+			},
+			now:     time.Now(),
+			wantErr: false,
+		},
+		{
+			name: "RecordInjection_RecordsTimestamp",
+			setup: func(cs *local.ConfigSafety) {
+				if err := cs.RecordInjection(context.Background(), "sc-1"); err != nil {
+					panic(err)
+				}
+			},
+			now:     time.Now(),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cs := local.NewConfigSafety(types.SafetyConfig{
+				CooldownDuration: types.Duration{Duration: 5 * time.Minute},
+			})
+			tt.setup(cs)
+			// Reset Now to the test's "current time" for CheckCooldown.
+			cs.Now = func() time.Time { return tt.now }
+
+			err := cs.CheckCooldown(context.Background(), "sc-1")
+			if tt.wantErr && !errors.Is(err, adapter.ErrCooldownActive) {
+				t.Errorf("CheckCooldown() error = %v, want %v", err, adapter.ErrCooldownActive)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("CheckCooldown() error = %v, want nil", err)
 			}
 		})
 	}

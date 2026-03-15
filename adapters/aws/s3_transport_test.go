@@ -612,6 +612,141 @@ func TestS3Transport_Release_MetaMissing(t *testing.T) {
 	}
 }
 
+// --- ListHeld tests ---
+
+func TestS3Transport_ListHeld_Empty(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, params *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			if aws.ToString(params.Bucket) != "pipeline-bucket" {
+				t.Errorf("Bucket = %q, want %q", aws.ToString(params.Bucket), "pipeline-bucket")
+			}
+			if aws.ToString(params.Prefix) != "chaos-hold/" {
+				t.Errorf("Prefix = %q, want %q", aws.ToString(params.Prefix), "chaos-hold/")
+			}
+			return &s3.ListObjectsV2Output{
+				Contents: nil,
+			}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v, want nil", err)
+	}
+	if len(objs) != 0 {
+		t.Errorf("ListHeld() returned %d objects, want 0", len(objs))
+	}
+}
+
+func TestS3Transport_ListHeld_WithHeldObjects(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{
+				Contents: []s3types.Object{
+					{Key: aws.String("chaos-hold/data1.csv"), Size: aws.Int64(100), LastModified: &now},
+					{Key: aws.String("chaos-hold/data1.csv.meta"), Size: aws.Int64(50), LastModified: &now},
+					{Key: aws.String("chaos-hold/data2.csv"), Size: aws.Int64(200), LastModified: &now},
+					{Key: aws.String("chaos-hold/data2.csv.meta"), Size: aws.Int64(50), LastModified: &now},
+				},
+			}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(objs) != 2 {
+		t.Fatalf("ListHeld() returned %d objects, want 2", len(objs))
+	}
+
+	// Keys should have the hold prefix stripped.
+	if objs[0].Key != "data1.csv" {
+		t.Errorf("objs[0].Key = %q, want %q", objs[0].Key, "data1.csv")
+	}
+	if objs[0].Size != 100 {
+		t.Errorf("objs[0].Size = %d, want 100", objs[0].Size)
+	}
+	if !objs[0].LastModified.Equal(now) {
+		t.Errorf("objs[0].LastModified = %v, want %v", objs[0].LastModified, now)
+	}
+	if objs[1].Key != "data2.csv" {
+		t.Errorf("objs[1].Key = %q, want %q", objs[1].Key, "data2.csv")
+	}
+	if objs[1].Size != 200 {
+		t.Errorf("objs[1].Size = %d, want 200", objs[1].Size)
+	}
+}
+
+func TestS3Transport_ListHeld_Pagination(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, params *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			callCount++
+			if callCount == 1 {
+				return &s3.ListObjectsV2Output{
+					Contents: []s3types.Object{
+						{Key: aws.String("chaos-hold/page1.csv")},
+					},
+					IsTruncated:           aws.Bool(true),
+					NextContinuationToken: aws.String("token-xyz"),
+				}, nil
+			}
+			if aws.ToString(params.ContinuationToken) != "token-xyz" {
+				t.Errorf("ContinuationToken = %q, want %q", aws.ToString(params.ContinuationToken), "token-xyz")
+			}
+			return &s3.ListObjectsV2Output{
+				Contents: []s3types.Object{
+					{Key: aws.String("chaos-hold/page2.csv")},
+				},
+			}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(objs) != 2 {
+		t.Fatalf("ListHeld() returned %d objects, want 2", len(objs))
+	}
+	if callCount != 2 {
+		t.Errorf("ListObjectsV2 called %d times, want 2", callCount)
+	}
+	if objs[0].Key != "page1.csv" {
+		t.Errorf("objs[0].Key = %q, want %q", objs[0].Key, "page1.csv")
+	}
+	if objs[1].Key != "page2.csv" {
+		t.Errorf("objs[1].Key = %q, want %q", objs[1].Key, "page2.csv")
+	}
+}
+
+func TestS3Transport_ListHeld_Error(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return nil, errors.New("access denied")
+		},
+	}
+
+	tr := newTestTransport(mock)
+	_, err := tr.ListHeld(context.Background())
+	if err == nil {
+		t.Fatal("ListHeld() error = nil, want error")
+	}
+}
+
 func TestS3Transport_Release_CopyFails(t *testing.T) {
 	t.Parallel()
 

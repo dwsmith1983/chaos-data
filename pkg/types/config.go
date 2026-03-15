@@ -14,6 +14,7 @@ type EngineConfig struct {
 	Mode    string        `yaml:"mode"    json:"mode"`
 	Adapter AdapterConfig `yaml:"adapter" json:"adapter"`
 	Safety  SafetyConfig  `yaml:"safety"  json:"safety"`
+	DryRun  bool          `yaml:"dry_run" json:"dry_run"`
 }
 
 // AdapterConfig identifies which adapter to use and its settings.

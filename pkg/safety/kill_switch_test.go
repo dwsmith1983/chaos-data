@@ -40,6 +40,14 @@ func (m *mockSafetyController) CheckSLAWindow(_ context.Context, _ string) (bool
 	return m.slaWindowSafe, m.slaWindowErr
 }
 
+func (m *mockSafetyController) CheckCooldown(_ context.Context, _ string) error {
+	return nil
+}
+
+func (m *mockSafetyController) RecordInjection(_ context.Context, _ string) error {
+	return nil
+}
+
 func TestCheckKillSwitch(t *testing.T) {
 	tests := []struct {
 		name       string

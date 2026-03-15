@@ -17,6 +17,7 @@ func rootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
+	root.AddCommand(apiCmd())
 	root.AddCommand(catalogCmd())
 	root.AddCommand(runCmd())
 	root.AddCommand(serveCmd())

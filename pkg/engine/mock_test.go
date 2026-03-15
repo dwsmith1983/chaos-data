@@ -6,7 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
+)
+
+// Compile-time interface assertions.
+var (
+	_ adapter.DataTransport   = (*mockTransport)(nil)
+	_ adapter.EventEmitter    = (*mockEmitter)(nil)
+	_ adapter.SafetyController = (*mockSafety)(nil)
 )
 
 // mockTransport is a test double for adapter.DataTransport.
@@ -73,6 +81,10 @@ func (m *mockTransport) Release(ctx context.Context, key string) error {
 	return nil
 }
 
+func (m *mockTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
+	return nil, nil
+}
+
 // mockEmitter is a test double for adapter.EventEmitter.
 type mockEmitter struct {
 	mu     sync.Mutex
@@ -100,6 +112,8 @@ func (m *mockEmitter) getEvents() []types.ChaosEvent {
 
 // mockSafety is a test double for adapter.SafetyController.
 type mockSafety struct {
+	mu sync.Mutex
+
 	enabled     bool
 	enabledErr  error
 	maxSev      types.Severity
@@ -107,6 +121,10 @@ type mockSafety struct {
 	blastErr    error
 	slaAllowed  bool
 	slaErr      error
+
+	cooldownErr      error
+	recordInjFn      func(ctx context.Context, scenario string) error
+	recordInjCalls   []string
 }
 
 func (m *mockSafety) IsEnabled(_ context.Context) (bool, error) {
@@ -123,4 +141,18 @@ func (m *mockSafety) CheckBlastRadius(_ context.Context, _ types.ExperimentStats
 
 func (m *mockSafety) CheckSLAWindow(_ context.Context, _ string) (bool, error) {
 	return m.slaAllowed, m.slaErr
+}
+
+func (m *mockSafety) CheckCooldown(_ context.Context, _ string) error {
+	return m.cooldownErr
+}
+
+func (m *mockSafety) RecordInjection(_ context.Context, scenario string) error {
+	m.mu.Lock()
+	m.recordInjCalls = append(m.recordInjCalls, scenario)
+	m.mu.Unlock()
+	if m.recordInjFn != nil {
+		return m.recordInjFn(context.Background(), scenario)
+	}
+	return nil
 }

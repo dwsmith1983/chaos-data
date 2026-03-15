@@ -38,6 +38,10 @@ func serveCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("read --duration flag: %w", err)
 			}
+			dryRun, err := cmd.Flags().GetBool("dry-run")
+			if err != nil {
+				return fmt.Errorf("read --dry-run flag: %w", err)
+			}
 
 			// Load all built-in catalog scenarios.
 			allScenarios, err := scenario.BuiltinCatalog()
@@ -61,6 +65,7 @@ func serveCmd() *cobra.Command {
 				types.EngineConfig{
 					Mode:   "probabilistic",
 					Safety: types.Defaults().Safety,
+					DryRun: dryRun,
 				},
 				transport,
 				registry,
@@ -87,6 +92,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().StringP("output", "o", "", "Output directory")
 	cmd.Flags().DurationP("interval", "n", 30*time.Second, "Interval between chaos iterations")
 	cmd.Flags().DurationP("duration", "d", 1*time.Hour, "Total duration to run")
+	cmd.Flags().Bool("dry-run", false, "Preview mutations without applying them")
 
 	_ = cmd.MarkFlagRequired("input")
 	_ = cmd.MarkFlagRequired("output")

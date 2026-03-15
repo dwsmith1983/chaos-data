@@ -10,13 +10,14 @@ import (
 	dtypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	chaosaws "github.com/dwsmith1983/chaos-data/adapters/aws"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
 const testSafetyTable = "chaos-control"
 
 func newSafety(api *mockDynamoDBAPI) *chaosaws.DynamoDBSafety {
-	return chaosaws.NewDynamoDBSafety(api, testSafetyTable)
+	return chaosaws.NewDynamoDBSafety(api, testSafetyTable, 5*time.Minute)
 }
 
 // ---------------------------------------------------------------------------
@@ -352,5 +353,140 @@ func TestDynamoDBSafety_CheckSLAWindow_NoConfig(t *testing.T) {
 	}
 	if !safe {
 		t.Error("expected true (safe) when no SLA config exists")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CheckCooldown
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBSafety_CheckCooldown_NoPrior(t *testing.T) {
+	t.Parallel()
+
+	api := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, _ *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{Item: nil}, nil
+		},
+	}
+
+	err := newSafety(api).CheckCooldown(context.Background(), "sc-delay")
+	if err != nil {
+		t.Fatalf("expected nil when no prior injection, got %v", err)
+	}
+}
+
+func TestDynamoDBSafety_CheckCooldown_Active(t *testing.T) {
+	t.Parallel()
+
+	// Injection recorded 1 minute ago — within the 5-minute cooldown.
+	recentTS := time.Now().Add(-1 * time.Minute).Format(time.RFC3339Nano)
+
+	api := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{
+				Item: map[string]dtypes.AttributeValue{
+					"PK":            &dtypes.AttributeValueMemberS{Value: chaosaws.CooldownPK()},
+					"SK":            &dtypes.AttributeValueMemberS{Value: chaosaws.CooldownSK("sc-delay")},
+					"last_injected": &dtypes.AttributeValueMemberS{Value: recentTS},
+				},
+			}, nil
+		},
+	}
+
+	err := newSafety(api).CheckCooldown(context.Background(), "sc-delay")
+	if !errors.Is(err, adapter.ErrCooldownActive) {
+		t.Fatalf("expected ErrCooldownActive, got %v", err)
+	}
+}
+
+func TestDynamoDBSafety_CheckCooldown_Expired(t *testing.T) {
+	t.Parallel()
+
+	// Injection recorded 10 minutes ago — outside the 5-minute cooldown.
+	oldTS := time.Now().Add(-10 * time.Minute).Format(time.RFC3339Nano)
+
+	api := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, _ *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{
+				Item: map[string]dtypes.AttributeValue{
+					"PK":            &dtypes.AttributeValueMemberS{Value: chaosaws.CooldownPK()},
+					"SK":            &dtypes.AttributeValueMemberS{Value: chaosaws.CooldownSK("sc-delay")},
+					"last_injected": &dtypes.AttributeValueMemberS{Value: oldTS},
+				},
+			}, nil
+		},
+	}
+
+	err := newSafety(api).CheckCooldown(context.Background(), "sc-delay")
+	if err != nil {
+		t.Fatalf("expected nil when cooldown expired, got %v", err)
+	}
+}
+
+func TestDynamoDBSafety_CheckCooldown_GetItemError(t *testing.T) {
+	t.Parallel()
+
+	api := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, _ *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return nil, errors.New("dynamo timeout")
+		},
+	}
+
+	// Fail-safe: errors in CheckCooldown allow injection (return nil).
+	err := newSafety(api).CheckCooldown(context.Background(), "sc-delay")
+	if err != nil {
+		t.Fatalf("expected nil (fail-safe) on GetItem error, got %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RecordInjection
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBSafety_RecordInjection(t *testing.T) {
+	t.Parallel()
+
+	var capturedInput *dynamodb.PutItemInput
+	api := &mockDynamoDBAPI{
+		PutItemFn: func(_ context.Context, in *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
+			capturedInput = in
+			return &dynamodb.PutItemOutput{}, nil
+		},
+	}
+
+	err := newSafety(api).RecordInjection(context.Background(), "sc-delay")
+	if err != nil {
+		t.Fatalf("RecordInjection() error = %v", err)
+	}
+
+	if capturedInput == nil {
+		t.Fatal("PutItem was not called")
+	}
+
+	// Verify PK.
+	pk, ok := capturedInput.Item["PK"].(*dtypes.AttributeValueMemberS)
+	if !ok {
+		t.Fatal("PK is not a string attribute")
+	}
+	if pk.Value != chaosaws.CooldownPK() {
+		t.Errorf("PK = %q, want %q", pk.Value, chaosaws.CooldownPK())
+	}
+
+	// Verify SK.
+	sk, ok := capturedInput.Item["SK"].(*dtypes.AttributeValueMemberS)
+	if !ok {
+		t.Fatal("SK is not a string attribute")
+	}
+	if sk.Value != chaosaws.CooldownSK("sc-delay") {
+		t.Errorf("SK = %q, want %q", sk.Value, chaosaws.CooldownSK("sc-delay"))
+	}
+
+	// Verify last_injected is present and parseable.
+	ts, ok := capturedInput.Item["last_injected"].(*dtypes.AttributeValueMemberS)
+	if !ok {
+		t.Fatal("last_injected is not a string attribute")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, ts.Value); err != nil {
+		t.Errorf("last_injected is not valid RFC3339Nano: %v", err)
 	}
 }

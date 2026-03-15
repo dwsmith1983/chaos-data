@@ -6,6 +6,8 @@ client for driving the chaos-data CLI binary.
 
 from __future__ import annotations
 
+import threading
+
 from chaosdata.client import ChaosDataClient, ChaosDataError
 from chaosdata.scenario import (
     Corrupt,
@@ -23,6 +25,7 @@ from chaosdata.types import (
     ChaosEvent,
     ExperimentResult,
     ExperimentStats,
+    ExperimentStatus,
     MutationRecord,
     ObjectFilter,
     Safety,
@@ -34,6 +37,7 @@ __all__ = [
     "ChaosEvent",
     "ExperimentResult",
     "ExperimentStats",
+    "ExperimentStatus",
     "MutationRecord",
     "ObjectFilter",
     "Safety",
@@ -54,18 +58,24 @@ __all__ = [
     "ChaosDataError",
     # Convenience
     "catalog",
+    "inject",
+    "replay",
     "run",
+    "start_experiment",
+    "status",
 ]
 
 _default_client: ChaosDataClient | None = None
+_default_client_lock = threading.Lock()
 
 
 def _get_client() -> ChaosDataClient:
     """Return the module-level default client, creating it on first use."""
     global _default_client  # noqa: PLW0603
-    if _default_client is None:
-        _default_client = ChaosDataClient()
-    return _default_client
+    with _default_client_lock:
+        if _default_client is None:
+            _default_client = ChaosDataClient()
+        return _default_client
 
 
 def run(scenario: str, input_dir: str, output_dir: str) -> str:
@@ -89,3 +99,32 @@ def catalog() -> str:
         Raw text output listing built-in scenarios.
     """
     return _get_client().catalog()
+
+
+def start_experiment(
+    scenarios: list[str],
+    input_dir: str,
+    output_dir: str,
+    duration: str = "5m",
+    mode: str = "deterministic",
+    dry_run: bool = False,
+) -> dict | list | None:
+    """Start a chaos experiment using the default client."""
+    return _get_client().start_experiment(
+        scenarios, input_dir, output_dir, duration, mode, dry_run
+    )
+
+
+def replay(manifest_path: str) -> dict | list | None:
+    """Replay mutations from a JSONL manifest file."""
+    return _get_client().replay(manifest_path)
+
+
+def status() -> dict | list | None:
+    """Check engine status using the default client."""
+    return _get_client().status()
+
+
+def inject(scenario: str, target: str, input_dir: str, output_dir: str) -> dict | list | None:
+    """Inject a single mutation using the default client."""
+    return _get_client().inject(scenario, target, input_dir, output_dir)

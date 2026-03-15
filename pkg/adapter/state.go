@@ -28,7 +28,9 @@ type TriggerKey struct {
 type StateStore interface {
 	ReadSensor(ctx context.Context, pipeline, key string) (SensorData, error)
 	WriteSensor(ctx context.Context, pipeline, key string, data SensorData) error
+	DeleteSensor(ctx context.Context, pipeline, key string) error
 	ReadTriggerStatus(ctx context.Context, key TriggerKey) (string, error)
 	WriteTriggerStatus(ctx context.Context, key TriggerKey, status string) error
 	WriteEvent(ctx context.Context, event types.ChaosEvent) error
+	ReadChaosEvents(ctx context.Context, experimentID string) ([]types.ChaosEvent, error)
 }

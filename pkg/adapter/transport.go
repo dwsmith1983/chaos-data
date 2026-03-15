@@ -26,4 +26,8 @@ type DataTransport interface {
 	// use side-channel storage (e.g., a holding prefix, metadata tags) to
 	// track hold state.
 	Release(ctx context.Context, key string) error
+
+	// ListHeld returns DataObjects currently in hold state. Implementations
+	// should exclude metadata sidecars from the result.
+	ListHeld(ctx context.Context) ([]types.DataObject, error)
 }

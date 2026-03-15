@@ -59,9 +59,10 @@ func (m *mockS3API) CopyObject(ctx context.Context, params *s3.CopyObjectInput, 
 
 // mockDynamoDBAPI implements chaosaws.DynamoDBAPI with optional function fields.
 type mockDynamoDBAPI struct {
-	GetItemFn func(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
-	PutItemFn func(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
-	QueryFn   func(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	GetItemFn    func(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	PutItemFn    func(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	DeleteItemFn func(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
+	QueryFn      func(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
 }
 
 func (m *mockDynamoDBAPI) GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
@@ -76,6 +77,13 @@ func (m *mockDynamoDBAPI) PutItem(ctx context.Context, params *dynamodb.PutItemI
 		return m.PutItemFn(ctx, params, optFns...)
 	}
 	return &dynamodb.PutItemOutput{}, nil
+}
+
+func (m *mockDynamoDBAPI) DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
+	if m.DeleteItemFn != nil {
+		return m.DeleteItemFn(ctx, params, optFns...)
+	}
+	return &dynamodb.DeleteItemOutput{}, nil
 }
 
 func (m *mockDynamoDBAPI) Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
@@ -97,10 +105,11 @@ func (n *noopTransport) Read(_ context.Context, _ string) (io.ReadCloser, error)
 	return io.NopCloser(io.LimitReader(nil, 0)), nil
 }
 
-func (n *noopTransport) Write(_ context.Context, _ string, _ io.Reader) error { return nil }
-func (n *noopTransport) Delete(_ context.Context, _ string) error             { return nil }
-func (n *noopTransport) Hold(_ context.Context, _ string, _ time.Time) error  { return nil }
-func (n *noopTransport) Release(_ context.Context, _ string) error            { return nil }
+func (n *noopTransport) Write(_ context.Context, _ string, _ io.Reader) error        { return nil }
+func (n *noopTransport) Delete(_ context.Context, _ string) error                    { return nil }
+func (n *noopTransport) Hold(_ context.Context, _ string, _ time.Time) error         { return nil }
+func (n *noopTransport) Release(_ context.Context, _ string) error                   { return nil }
+func (n *noopTransport) ListHeld(_ context.Context) ([]types.DataObject, error) { return nil, nil }
 
 // mockEventBridgeAPI implements chaosaws.EventBridgeAPI with optional function fields.
 type mockEventBridgeAPI struct {

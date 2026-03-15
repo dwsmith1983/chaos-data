@@ -2,6 +2,7 @@ package aws_test
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strconv"
 	"testing"
@@ -305,5 +306,211 @@ func TestDynamoDBState_WriteEvent_Happy(t *testing.T) {
 	paramsAttr := captured.Item["params"].(*dynamodbtypes.AttributeValueMemberM)
 	if got := paramsAttr.Value["ms"].(*dynamodbtypes.AttributeValueMemberS).Value; got != "500" {
 		t.Errorf("params[ms] = %q, want %q", got, "500")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DeleteSensor
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBState_DeleteSensor_Happy(t *testing.T) {
+	t.Parallel()
+
+	var captured *dynamodb.DeleteItemInput
+	mock := &mockDynamoDBAPI{
+		DeleteItemFn: func(_ context.Context, params *dynamodb.DeleteItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
+			captured = params
+			return &dynamodb.DeleteItemOutput{}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	err := store.DeleteSensor(context.Background(), "etl-pipeline", "landing/orders")
+	if err != nil {
+		t.Fatalf("DeleteSensor() error = %v", err)
+	}
+	if captured == nil {
+		t.Fatal("DeleteItem was not called")
+	}
+	if got := *captured.TableName; got != testTable {
+		t.Errorf("TableName = %q, want %q", got, testTable)
+	}
+
+	wantPK := chaosaws.SensorPK("etl-pipeline")
+	wantSK := chaosaws.SensorSK("landing/orders")
+	if got := captured.Key["PK"].(*dynamodbtypes.AttributeValueMemberS).Value; got != wantPK {
+		t.Errorf("PK = %q, want %q", got, wantPK)
+	}
+	if got := captured.Key["SK"].(*dynamodbtypes.AttributeValueMemberS).Value; got != wantSK {
+		t.Errorf("SK = %q, want %q", got, wantSK)
+	}
+}
+
+func TestDynamoDBState_DeleteSensor_Error(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("dynamo delete failed")
+	mock := &mockDynamoDBAPI{
+		DeleteItemFn: func(_ context.Context, _ *dynamodb.DeleteItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
+			return nil, wantErr
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	err := store.DeleteSensor(context.Background(), "etl-pipeline", "landing/orders")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("expected error wrapping %v, got %v", wantErr, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ReadChaosEvents
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBState_ReadChaosEvents_Happy(t *testing.T) {
+	t.Parallel()
+
+	ts1 := time.Date(2026, 3, 14, 15, 30, 0, 0, time.UTC)
+	ts2 := time.Date(2026, 3, 14, 15, 31, 0, 0, time.UTC)
+
+	mock := &mockDynamoDBAPI{
+		QueryFn: func(_ context.Context, params *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+			if got := *params.TableName; got != testTable {
+				t.Errorf("TableName = %q, want %q", got, testTable)
+			}
+			wantPK := chaosaws.ChaosPK("exp-001")
+			gotPK := params.ExpressionAttributeValues[":pk"].(*dynamodbtypes.AttributeValueMemberS).Value
+			if gotPK != wantPK {
+				t.Errorf("PK = %q, want %q", gotPK, wantPK)
+			}
+			return &dynamodb.QueryOutput{
+				Items: []map[string]dynamodbtypes.AttributeValue{
+					{
+						"id":            &dynamodbtypes.AttributeValueMemberS{Value: "evt-001"},
+						"experiment_id": &dynamodbtypes.AttributeValueMemberS{Value: "exp-001"},
+						"scenario":      &dynamodbtypes.AttributeValueMemberS{Value: "delay"},
+						"category":      &dynamodbtypes.AttributeValueMemberS{Value: "latency"},
+						"severity":      &dynamodbtypes.AttributeValueMemberN{Value: strconv.Itoa(int(types.SeverityModerate))},
+						"target":        &dynamodbtypes.AttributeValueMemberS{Value: "s3://bucket/key1"},
+						"mutation":      &dynamodbtypes.AttributeValueMemberS{Value: "add-delay"},
+						"timestamp":     &dynamodbtypes.AttributeValueMemberS{Value: ts1.Format(time.RFC3339Nano)},
+						"mode":          &dynamodbtypes.AttributeValueMemberS{Value: "deterministic"},
+						"params": &dynamodbtypes.AttributeValueMemberM{Value: map[string]dynamodbtypes.AttributeValue{
+							"ms": &dynamodbtypes.AttributeValueMemberS{Value: "500"},
+						}},
+					},
+					{
+						"id":            &dynamodbtypes.AttributeValueMemberS{Value: "evt-002"},
+						"experiment_id": &dynamodbtypes.AttributeValueMemberS{Value: "exp-001"},
+						"scenario":      &dynamodbtypes.AttributeValueMemberS{Value: "corrupt"},
+						"category":      &dynamodbtypes.AttributeValueMemberS{Value: "integrity"},
+						"severity":      &dynamodbtypes.AttributeValueMemberN{Value: strconv.Itoa(int(types.SeveritySevere))},
+						"target":        &dynamodbtypes.AttributeValueMemberS{Value: "s3://bucket/key2"},
+						"mutation":      &dynamodbtypes.AttributeValueMemberS{Value: "flip-bytes"},
+						"timestamp":     &dynamodbtypes.AttributeValueMemberS{Value: ts2.Format(time.RFC3339Nano)},
+						"mode":          &dynamodbtypes.AttributeValueMemberS{Value: "probabilistic"},
+					},
+				},
+			}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	events, err := store.ReadChaosEvents(context.Background(), "exp-001")
+	if err != nil {
+		t.Fatalf("ReadChaosEvents() error = %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("ReadChaosEvents() returned %d events, want 2", len(events))
+	}
+
+	// Verify first event
+	if events[0].ID != "evt-001" {
+		t.Errorf("events[0].ID = %q, want %q", events[0].ID, "evt-001")
+	}
+	if events[0].ExperimentID != "exp-001" {
+		t.Errorf("events[0].ExperimentID = %q, want %q", events[0].ExperimentID, "exp-001")
+	}
+	if events[0].Scenario != "delay" {
+		t.Errorf("events[0].Scenario = %q, want %q", events[0].Scenario, "delay")
+	}
+	if events[0].Category != "latency" {
+		t.Errorf("events[0].Category = %q, want %q", events[0].Category, "latency")
+	}
+	if events[0].Severity != types.SeverityModerate {
+		t.Errorf("events[0].Severity = %d, want %d", events[0].Severity, types.SeverityModerate)
+	}
+	if events[0].Target != "s3://bucket/key1" {
+		t.Errorf("events[0].Target = %q, want %q", events[0].Target, "s3://bucket/key1")
+	}
+	if events[0].Mutation != "add-delay" {
+		t.Errorf("events[0].Mutation = %q, want %q", events[0].Mutation, "add-delay")
+	}
+	if !events[0].Timestamp.Equal(ts1) {
+		t.Errorf("events[0].Timestamp = %v, want %v", events[0].Timestamp, ts1)
+	}
+	if events[0].Mode != "deterministic" {
+		t.Errorf("events[0].Mode = %q, want %q", events[0].Mode, "deterministic")
+	}
+	if events[0].Params["ms"] != "500" {
+		t.Errorf("events[0].Params[ms] = %q, want %q", events[0].Params["ms"], "500")
+	}
+
+	// Verify second event
+	if events[1].ID != "evt-002" {
+		t.Errorf("events[1].ID = %q, want %q", events[1].ID, "evt-002")
+	}
+	if events[1].Severity != types.SeveritySevere {
+		t.Errorf("events[1].Severity = %d, want %d", events[1].Severity, types.SeveritySevere)
+	}
+	if events[1].Params != nil {
+		t.Errorf("events[1].Params = %v, want nil (no params attribute)", events[1].Params)
+	}
+}
+
+func TestDynamoDBState_ReadChaosEvents_Empty(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockDynamoDBAPI{
+		QueryFn: func(_ context.Context, _ *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{
+				Items: []map[string]dynamodbtypes.AttributeValue{},
+			}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	events, err := store.ReadChaosEvents(context.Background(), "exp-missing")
+	if err != nil {
+		t.Fatalf("ReadChaosEvents() error = %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("ReadChaosEvents() returned %d events, want 0", len(events))
+	}
+}
+
+func TestDynamoDBState_ReadChaosEvents_Error(t *testing.T) {
+	t.Parallel()
+
+	wantErr := errors.New("dynamo query failed")
+	mock := &mockDynamoDBAPI{
+		QueryFn: func(_ context.Context, _ *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+			return nil, wantErr
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	events, err := store.ReadChaosEvents(context.Background(), "exp-001")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("expected error wrapping %v, got %v", wantErr, err)
+	}
+	if events != nil {
+		t.Errorf("expected nil events on error, got %v", events)
 	}
 }

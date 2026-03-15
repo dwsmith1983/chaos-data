@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
@@ -97,6 +99,26 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 				continue
 			}
 
+			// Check cooldown for this scenario.
+			if e.safety != nil {
+				if cdErr := e.safety.CheckCooldown(ctx, sc.Name); cdErr != nil {
+					if errors.Is(cdErr, adapter.ErrCooldownActive) {
+						continue
+					}
+					// Non-sentinel cooldown errors are recorded and continue
+					// (matching probabilistic error-handling pattern).
+					records = append(records, types.MutationRecord{
+						ObjectKey: obj.Key,
+						Mutation:  sc.Mutation.Type,
+						Params:    sc.Mutation.Params,
+						Applied:   false,
+						Error:     fmt.Sprintf("scenario %q: cooldown: %v", sc.Name, cdErr),
+						Timestamp: time.Now(),
+					})
+					continue
+				}
+			}
+
 			// Get mutation from registry.
 			m, err := e.mutations.Get(sc.Mutation.Type)
 			if err != nil {
@@ -147,6 +169,21 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 				}
 				if emitErr := e.emitter.Emit(ctx, event); emitErr != nil {
 					return records, fmt.Errorf("emit event: %w", emitErr)
+				}
+			}
+
+			// Record injection for cooldown tracking.
+			if e.safety != nil {
+				if riErr := e.safety.RecordInjection(ctx, sc.Name); riErr != nil {
+					records = append(records, types.MutationRecord{
+						ObjectKey: obj.Key,
+						Mutation:  sc.Mutation.Type,
+						Params:    sc.Mutation.Params,
+						Applied:   false,
+						Error:     fmt.Sprintf("scenario %q: record injection: %v", sc.Name, riErr),
+						Timestamp: time.Now(),
+					})
+					continue
 				}
 			}
 		}

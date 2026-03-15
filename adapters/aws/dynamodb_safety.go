@@ -24,16 +24,18 @@ const slaWindowDuration = 30 * time.Minute
 // table for control records. All operations fail-safe: missing records
 // or errors result in the most conservative (safest) return value.
 type DynamoDBSafety struct {
-	api       DynamoDBAPI
-	tableName string
+	api              DynamoDBAPI
+	tableName        string
+	cooldownDuration time.Duration
 }
 
 // NewDynamoDBSafety creates a DynamoDBSafety backed by the given
-// DynamoDBAPI client and table name.
-func NewDynamoDBSafety(api DynamoDBAPI, tableName string) *DynamoDBSafety {
+// DynamoDBAPI client, table name, and cooldown duration.
+func NewDynamoDBSafety(api DynamoDBAPI, tableName string, cooldownDuration time.Duration) *DynamoDBSafety {
 	return &DynamoDBSafety{
-		api:       api,
-		tableName: tableName,
+		api:              api,
+		tableName:        tableName,
+		cooldownDuration: cooldownDuration,
 	}
 }
 
@@ -162,6 +164,60 @@ func (s *DynamoDBSafety) CheckSLAWindow(ctx context.Context, pipeline string) (b
 		return false, nil
 	}
 	return true, nil
+}
+
+// CheckCooldown checks whether the scenario is within its cooldown period.
+// Returns adapter.ErrCooldownActive when the scenario was injected within
+// the configured cooldown duration.
+//
+// Fail-safe: missing record or error returns nil (allow injection).
+func (s *DynamoDBSafety) CheckCooldown(ctx context.Context, scenario string) error {
+	out, err := s.api.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: &s.tableName,
+		Key: map[string]dtypes.AttributeValue{
+			"PK": &dtypes.AttributeValueMemberS{Value: CooldownPK()},
+			"SK": &dtypes.AttributeValueMemberS{Value: CooldownSK(scenario)},
+		},
+	})
+	if err != nil {
+		// Fail-safe: allow injection on error.
+		return nil
+	}
+	if len(out.Item) == 0 {
+		return nil
+	}
+
+	tsStr, ok := stringAttr(out.Item, "last_injected")
+	if !ok {
+		return nil
+	}
+
+	lastInjected, err := time.Parse(time.RFC3339Nano, tsStr)
+	if err != nil {
+		// Fail-safe: unparseable timestamp allows injection.
+		return nil
+	}
+
+	if time.Since(lastInjected) < s.cooldownDuration {
+		return adapter.ErrCooldownActive
+	}
+	return nil
+}
+
+// RecordInjection records the current time as the last injection for a scenario.
+func (s *DynamoDBSafety) RecordInjection(ctx context.Context, scenario string) error {
+	_, err := s.api.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: &s.tableName,
+		Item: map[string]dtypes.AttributeValue{
+			"PK":            &dtypes.AttributeValueMemberS{Value: CooldownPK()},
+			"SK":            &dtypes.AttributeValueMemberS{Value: CooldownSK(scenario)},
+			"last_injected": &dtypes.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339Nano)},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("dynamodb safety: record injection: %w", err)
+	}
+	return nil
 }
 
 // getControl fetches a control record from DynamoDB.

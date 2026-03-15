@@ -127,6 +127,11 @@ func (m *mockTransport) Release(_ context.Context, key string) error {
 	return nil
 }
 
+func (m *mockTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
+	m.record(call{Method: "ListHeld"})
+	return nil, nil
+}
+
 // stateCall records a single method invocation on the mock state store.
 type stateCall struct {
 	Method   string
@@ -246,4 +251,21 @@ func (m *mockStateStore) WriteEvent(_ context.Context, event types.ChaosEvent) e
 	m.events = append(m.events, event)
 	m.mu.Unlock()
 	return nil
+}
+
+func (m *mockStateStore) DeleteSensor(_ context.Context, pipeline, key string) error {
+	m.recordCall(stateCall{Method: "DeleteSensor", Pipeline: pipeline, Key: key})
+	sKey := pipeline + "/" + key
+	m.mu.Lock()
+	delete(m.sensors, sKey)
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *mockStateStore) ReadChaosEvents(_ context.Context, _ string) ([]types.ChaosEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]types.ChaosEvent, len(m.events))
+	copy(result, m.events)
+	return result, nil
 }

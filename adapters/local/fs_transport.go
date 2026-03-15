@@ -182,6 +182,40 @@ func (t *FSTransport) Hold(_ context.Context, key string, until time.Time) error
 	return nil
 }
 
+// ListHeld returns DataObjects currently in the hold directory, excluding
+// .meta sidecars and subdirectories. If the hold directory does not exist,
+// an empty slice is returned without error.
+func (t *FSTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
+	entries, err := os.ReadDir(t.holdDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list hold dir: %w", err)
+	}
+
+	var objects []types.DataObject
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasSuffix(name, ".meta") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil, fmt.Errorf("stat held %s: %w", name, err)
+		}
+		objects = append(objects, types.DataObject{
+			Key:          name,
+			Size:         info.Size(),
+			LastModified: info.ModTime(),
+		})
+	}
+	return objects, nil
+}
+
 // Release moves a file from holdDir to outputDir and removes the .meta
 // sidecar file. A missing .meta file is tolerated (not treated as an error).
 // Returns an error if key would escape the hold or output directories.

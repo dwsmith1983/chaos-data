@@ -70,6 +70,10 @@ func runCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("read --output flag: %w", err)
 			}
+			dryRun, err := cmd.Flags().GetBool("dry-run")
+			if err != nil {
+				return fmt.Errorf("read --dry-run flag: %w", err)
+			}
 
 			sc, err := loadScenario(scenarioFlag)
 			if err != nil {
@@ -81,8 +85,11 @@ func runCmd() *cobra.Command {
 			safety := local.NewConfigSafety(types.Defaults().Safety)
 			registry := defaultRegistry()
 
+			cfg := types.Defaults()
+			cfg.DryRun = dryRun
+
 			eng := engine.New(
-				types.Defaults(),
+				cfg,
 				transport,
 				registry,
 				[]scenario.Scenario{sc},
@@ -103,6 +110,7 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringP("scenario", "s", "", "Scenario name (from catalog) or path to YAML file")
 	cmd.Flags().StringP("input", "i", "", "Input staging directory")
 	cmd.Flags().StringP("output", "o", "", "Output directory")
+	cmd.Flags().Bool("dry-run", false, "Preview mutations without applying them")
 
 	_ = cmd.MarkFlagRequired("scenario")
 	_ = cmd.MarkFlagRequired("input")

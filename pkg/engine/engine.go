@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -114,16 +115,39 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 			continue
 		}
 
+		// Check cooldown for this scenario.
+		if e.safety != nil {
+			if cdErr := e.safety.CheckCooldown(ctx, sc.Name); cdErr != nil {
+				if errors.Is(cdErr, adapter.ErrCooldownActive) {
+					continue
+				}
+				return records, fmt.Errorf("process object %q: scenario %q: cooldown: %w", obj.Key, sc.Name, cdErr)
+			}
+		}
+
 		// Get mutation from registry.
 		m, err := e.mutations.Get(sc.Mutation.Type)
 		if err != nil {
 			return records, fmt.Errorf("process object %q: scenario %q: %w", obj.Key, sc.Name, err)
 		}
 
-		// Apply the mutation.
-		record, err := m.Apply(ctx, obj, e.transport, sc.Mutation.Params)
-		if err != nil {
-			return records, fmt.Errorf("process object %q: scenario %q: apply %q: %w", obj.Key, sc.Name, sc.Mutation.Type, err)
+		// Apply the mutation (or simulate in dry-run mode).
+		var record types.MutationRecord
+		if e.config.DryRun {
+			record = types.MutationRecord{
+				ObjectKey: obj.Key,
+				Mutation:  sc.Mutation.Type,
+				Params:    sc.Mutation.Params,
+				Applied:   false,
+				Error:     "dry-run",
+				Timestamp: time.Now(),
+			}
+		} else {
+			var applyErr error
+			record, applyErr = m.Apply(ctx, obj, e.transport, sc.Mutation.Params)
+			if applyErr != nil {
+				return records, fmt.Errorf("process object %q: scenario %q: apply %q: %w", obj.Key, sc.Name, sc.Mutation.Type, applyErr)
+			}
 		}
 
 		records = append(records, record)
@@ -144,6 +168,13 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 			}
 			if err := e.emitter.Emit(ctx, event); err != nil {
 				return records, fmt.Errorf("process object %q: emit event: %w", obj.Key, err)
+			}
+		}
+
+		// Record injection for cooldown tracking (skip in dry-run).
+		if e.safety != nil && !e.config.DryRun {
+			if riErr := e.safety.RecordInjection(ctx, sc.Name); riErr != nil {
+				return records, fmt.Errorf("process object %q: record injection: %w", obj.Key, riErr)
 			}
 		}
 	}
