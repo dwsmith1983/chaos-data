@@ -16,7 +16,28 @@ var (
 	_ adapter.EventEmitter     = (*mockEmitter)(nil)
 	_ adapter.SafetyController = (*mockSafety)(nil)
 	_ adapter.DependencyResolver = (*mockResolver)(nil)
+	_ adapter.Asserter           = (*mockAsserter)(nil)
 )
+
+// mockAsserter is a test double for adapter.Asserter.
+type mockAsserter struct {
+	supported map[types.AssertionType]bool
+	results   map[string]bool // target → result
+	callCount int
+	mu        sync.Mutex
+}
+
+func (m *mockAsserter) Supports(at types.AssertionType) bool {
+	return m.supported[at]
+}
+
+func (m *mockAsserter) Evaluate(_ context.Context, a types.Assertion) (bool, error) {
+	m.mu.Lock()
+	m.callCount++
+	result := m.results[a.Target]
+	m.mu.Unlock()
+	return result, nil
+}
 
 // mockResolver is a test double for adapter.DependencyResolver.
 type mockResolver struct {

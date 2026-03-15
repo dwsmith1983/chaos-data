@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
@@ -21,6 +22,7 @@ type Engine struct {
 	emitter   adapter.EventEmitter
 	safety    adapter.SafetyController
 	resolver  adapter.DependencyResolver
+	asserter  adapter.Asserter
 	mutations *mutation.Registry
 	scenarios []scenario.Scenario
 }
@@ -49,6 +51,12 @@ func WithDependencyResolver(r adapter.DependencyResolver) EngineOption {
 	return func(eng *Engine) {
 		eng.resolver = r
 	}
+}
+
+// WithAsserter attaches an Asserter to the engine for evaluating
+// non-data_state assertion types in expected_response blocks.
+func WithAsserter(a adapter.Asserter) EngineOption {
+	return func(eng *Engine) { eng.asserter = a }
 }
 
 // New creates an Engine with the given configuration, transport, mutation
@@ -157,6 +165,7 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 		if e.config.DryRun {
 			record = types.MutationRecord{
 				ObjectKey: obj.Key,
+				Scenario:  sc.Name,
 				Mutation:  sc.Mutation.Type,
 				Params:    sc.Mutation.Params,
 				Applied:   false,
@@ -169,6 +178,7 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 			if applyErr != nil {
 				return records, fmt.Errorf("process object %q: scenario %q: apply %q: %w", obj.Key, sc.Name, sc.Mutation.Type, applyErr)
 			}
+			record.Scenario = sc.Name
 		}
 
 		records = append(records, record)
@@ -201,6 +211,91 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 	}
 
 	return records, nil
+}
+
+// EvaluateAssertions polls all assertions from the given scenarios until all are
+// satisfied or the maximum Within deadline (across all scenarios) elapses.
+//
+// Each assertion is routed:
+//  1. To the external Asserter (if set and Supports returns true)
+//  2. To the built-in DataStateAsserter for data_state assertions
+//  3. Otherwise an unsupported-type error is recorded
+//
+// Returns nil when no scenarios have Expected set.
+func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Scenario) []types.AssertionResult {
+	type pendingAssertion struct {
+		assertion types.Assertion
+		idx       int
+	}
+	var results []types.AssertionResult
+	var pending []pendingAssertion
+	var maxWithin time.Duration
+
+	for _, sc := range scenarios {
+		if sc.Expected == nil {
+			continue
+		}
+		if sc.Expected.Within.Duration > maxWithin {
+			maxWithin = sc.Expected.Within.Duration
+		}
+		for _, a := range sc.Expected.Asserts {
+			idx := len(results)
+			results = append(results, types.AssertionResult{Assertion: a})
+			pending = append(pending, pendingAssertion{assertion: a, idx: idx})
+		}
+	}
+
+	if len(pending) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, maxWithin)
+	defer cancel()
+
+	pollInterval := e.config.AssertPollInterval.Duration
+	if pollInterval <= 0 {
+		pollInterval = time.Second
+	}
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	dataAsserter := NewDataStateAsserter(e.transport)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return results
+		case <-ticker.C:
+			remaining := pending[:0]
+			for _, p := range pending {
+				ok, err := e.evaluateOne(ctx, p.assertion, dataAsserter)
+				if ok && err == nil {
+					results[p.idx].Satisfied = true
+					results[p.idx].EvalAt = time.Now()
+				} else {
+					if err != nil {
+						results[p.idx].Error = err.Error()
+					}
+					remaining = append(remaining, p)
+				}
+			}
+			pending = remaining
+			if len(pending) == 0 {
+				return results
+			}
+		}
+	}
+}
+
+// evaluateOne routes a single assertion to the appropriate evaluator.
+func (e *Engine) evaluateOne(ctx context.Context, a types.Assertion, dataAsserter *DataStateAsserter) (bool, error) {
+	if e.asserter != nil && e.asserter.Supports(a.Type) {
+		return e.asserter.Evaluate(ctx, a)
+	}
+	if a.Type == types.AssertDataState {
+		return dataAsserter.Evaluate(ctx, a)
+	}
+	return false, fmt.Errorf("no asserter supports assertion type %q", a.Type)
 }
 
 // Run executes a deterministic chaos run against all objects in the staging area.
@@ -274,6 +369,71 @@ func (e *Engine) Run(ctx context.Context) ([]types.MutationRecord, error) {
 			if brErr := e.safety.CheckBlastRadius(ctx, stats); brErr != nil {
 				break // stop injecting; return partial results without error
 			}
+		}
+	}
+
+	// Evaluate assertions after the mutation loop.
+	if e.config.AssertWait {
+		// Collect scenarios where at least one Applied=true mutation was recorded.
+		scenarioApplied := make(map[string]bool)
+		for _, r := range allRecords {
+			if r.Applied {
+				scenarioApplied[r.Scenario] = true
+			}
+		}
+		var appliedScenarios []scenario.Scenario
+		for _, sc := range e.scenarios {
+			if sc.Expected != nil && scenarioApplied[sc.Name] {
+				appliedScenarios = append(appliedScenarios, sc)
+			}
+		}
+		if len(appliedScenarios) > 0 {
+			assertResults := e.EvaluateAssertions(ctx, appliedScenarios)
+			if len(assertResults) > 0 && e.emitter != nil {
+				now := time.Now()
+				var names []string
+				for _, sc := range appliedScenarios {
+					names = append(names, sc.Name)
+				}
+				event := types.ChaosEvent{
+					ID:         fmt.Sprintf("assert-%d", now.UnixNano()),
+					Scenario:   strings.Join(names, ","),
+					Category:   "assertion",
+					Severity:   types.SeverityLow,
+					Mutation:   "assertion_evaluation",
+					Assertions: assertResults,
+					Timestamp:  now,
+					Mode:       e.config.Mode,
+				}
+				_ = e.emitter.Emit(ctx, event) // best-effort: assertion event emission does not fail the run
+			}
+		}
+	} else {
+		// AssertWait=false: write unevaluated assertion placeholders.
+		var assertResults []types.AssertionResult
+		var names []string
+		for _, sc := range e.scenarios {
+			if sc.Expected == nil {
+				continue
+			}
+			names = append(names, sc.Name)
+			for _, a := range sc.Expected.Asserts {
+				assertResults = append(assertResults, types.AssertionResult{Assertion: a})
+			}
+		}
+		if len(assertResults) > 0 && e.emitter != nil {
+			now := time.Now()
+			event := types.ChaosEvent{
+				ID:         fmt.Sprintf("assert-%d", now.UnixNano()),
+				Scenario:   strings.Join(names, ","),
+				Category:   "assertion",
+				Severity:   types.SeverityLow,
+				Mutation:   "assertion_evaluation",
+				Assertions: assertResults,
+				Timestamp:  now,
+				Mode:       e.config.Mode,
+			}
+			_ = e.emitter.Emit(ctx, event) // best-effort: assertion event emission does not fail the run
 		}
 	}
 

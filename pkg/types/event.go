@@ -102,6 +102,7 @@ func (s ExperimentState) IsValid() bool {
 // MutationRecord tracks the result of applying a single mutation to an object.
 type MutationRecord struct {
 	ObjectKey string            `json:"object_key"`
+	Scenario  string            `json:"scenario"`
 	Mutation  string            `json:"mutation"`
 	Params    map[string]string `json:"params"`
 	Applied   bool              `json:"applied"`

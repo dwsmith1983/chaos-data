@@ -3,6 +3,8 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1210,5 +1212,207 @@ func TestRun_StopsWhenMaxMutationsExceeded(t *testing.T) {
 	// exceeds the limit of 2; Run stops. So exactly 3 records are returned.
 	if len(records) != 3 {
 		t.Errorf("Run() returned %d records, want 3 (stopped after limit exceeded on 3rd check)", len(records))
+	}
+}
+
+// --- Assertion evaluation tests ---
+
+// newAssertScenario creates a scenario with an Expected response block.
+func newAssertScenario(name string, asserts []types.Assertion, within time.Duration) scenario.Scenario {
+	s := newDelayScenario(name, types.SeverityLow)
+	s.Expected = &scenario.ExpectedResponse{
+		Within:  types.Duration{Duration: within},
+		Asserts: asserts,
+	}
+	return s
+}
+
+func TestEvaluateAssertions_AllSatisfied(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{}
+	asserter := &mockAsserter{
+		supported: map[types.AssertionType]bool{types.AssertSensorState: true},
+		results:   map[string]bool{"pipeline/key": true},
+	}
+	cfg := defaultConfig()
+	cfg.AssertWait = true
+	cfg.AssertPollInterval = types.Duration{Duration: 10 * time.Millisecond}
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertSensorState, Target: "pipeline/key", Condition: types.CondIsStale},
+	}, 5*time.Second)
+
+	eng := engine.New(cfg, transport, mutation.NewRegistry(), []scenario.Scenario{sc}, engine.WithAsserter(asserter))
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if !results[0].Satisfied {
+		t.Error("expected Satisfied=true")
+	}
+	if results[0].EvalAt.IsZero() {
+		t.Error("expected EvalAt to be set")
+	}
+}
+
+func TestEvaluateAssertions_Timeout(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{}
+	asserter := &mockAsserter{
+		supported: map[types.AssertionType]bool{types.AssertSensorState: true},
+		results:   map[string]bool{"pipeline/key": false}, // never satisfied
+	}
+	cfg := defaultConfig()
+	cfg.AssertWait = true
+	cfg.AssertPollInterval = types.Duration{Duration: 10 * time.Millisecond}
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertSensorState, Target: "pipeline/key", Condition: types.CondIsStale},
+	}, 100*time.Millisecond) // short timeout
+
+	eng := engine.New(cfg, transport, mutation.NewRegistry(), []scenario.Scenario{sc}, engine.WithAsserter(asserter))
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if results[0].Satisfied {
+		t.Error("expected Satisfied=false (timed out)")
+	}
+}
+
+func TestEvaluateAssertions_DataStateNative(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{
+		readFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("data")), nil
+		},
+	}
+	cfg := defaultConfig()
+	cfg.AssertWait = true
+	cfg.AssertPollInterval = types.Duration{Duration: 10 * time.Millisecond}
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertDataState, Target: "file.jsonl", Condition: types.CondExists},
+	}, 5*time.Second)
+
+	// No external asserter — data_state should be handled natively.
+	eng := engine.New(cfg, transport, mutation.NewRegistry(), []scenario.Scenario{sc})
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if !results[0].Satisfied {
+		t.Error("expected Satisfied=true (file exists)")
+	}
+}
+
+func TestRun_AssertWaitTrue_EmitsAssertionEvent(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{newTestObject("a.csv")}, nil
+		},
+	}
+	emitter := &mockEmitter{}
+	asserter := &mockAsserter{
+		supported: map[types.AssertionType]bool{types.AssertSensorState: true},
+		results:   map[string]bool{"pipeline/key": true},
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	cfg := defaultConfig()
+	cfg.AssertWait = true
+	cfg.AssertPollInterval = types.Duration{Duration: 10 * time.Millisecond}
+
+	sc := newAssertScenario("test-delay", []types.Assertion{
+		{Type: types.AssertSensorState, Target: "pipeline/key", Condition: types.CondIsStale},
+	}, 5*time.Second)
+
+	eng := engine.New(cfg, transport, reg, []scenario.Scenario{sc},
+		engine.WithEmitter(emitter),
+		engine.WithAsserter(asserter),
+	)
+
+	_, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	events := emitter.getEvents()
+	// Should have at least 2 events: the mutation event + the assertion event.
+	var assertEvent *types.ChaosEvent
+	for i := range events {
+		if events[i].Mutation == "assertion_evaluation" {
+			assertEvent = &events[i]
+			break
+		}
+	}
+	if assertEvent == nil {
+		t.Fatal("no assertion_evaluation event found")
+	}
+	if len(assertEvent.Assertions) != 1 {
+		t.Fatalf("assertion event has %d assertions, want 1", len(assertEvent.Assertions))
+	}
+	if !assertEvent.Assertions[0].Satisfied {
+		t.Error("expected assertion Satisfied=true")
+	}
+}
+
+func TestRun_AssertWaitFalse_WritesUnevaluated(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{newTestObject("a.csv")}, nil
+		},
+	}
+	emitter := &mockEmitter{}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	cfg := defaultConfig()
+	cfg.AssertWait = false // do not wait for assertions
+
+	sc := newAssertScenario("test-delay", []types.Assertion{
+		{Type: types.AssertSensorState, Target: "pipeline/key", Condition: types.CondIsStale},
+	}, 5*time.Second)
+
+	eng := engine.New(cfg, transport, reg, []scenario.Scenario{sc},
+		engine.WithEmitter(emitter),
+	)
+
+	_, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	events := emitter.getEvents()
+	var assertEvent *types.ChaosEvent
+	for i := range events {
+		if events[i].Mutation == "assertion_evaluation" {
+			assertEvent = &events[i]
+			break
+		}
+	}
+	if assertEvent == nil {
+		t.Fatal("no assertion_evaluation event found")
+	}
+	if len(assertEvent.Assertions) != 1 {
+		t.Fatalf("assertion event has %d assertions, want 1", len(assertEvent.Assertions))
+	}
+	if assertEvent.Assertions[0].Satisfied {
+		t.Error("expected Satisfied=false (not evaluated)")
+	}
+	if !assertEvent.Assertions[0].EvalAt.IsZero() {
+		t.Error("expected EvalAt to be zero (not evaluated)")
 	}
 }
