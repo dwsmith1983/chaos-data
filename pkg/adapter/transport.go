@@ -2,11 +2,16 @@ package adapter
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
+
+// ErrNotFound is returned by DataTransport.Read when the key does not exist.
+// Implementations should wrap this sentinel so callers can use errors.Is.
+var ErrNotFound = errors.New("not found")
 
 // DataTransport moves data between staging and pipeline destinations.
 type DataTransport interface {
