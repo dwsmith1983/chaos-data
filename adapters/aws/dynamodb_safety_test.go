@@ -280,6 +280,82 @@ func TestDynamoDBSafety_CheckBlastRadius_NoConfig(t *testing.T) {
 	}
 }
 
+func TestDynamoDBSafety_CheckBlastRadius_MaxHeldBytesExceeded(t *testing.T) {
+	t.Parallel()
+
+	api := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, _ *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{
+				Item: map[string]dtypes.AttributeValue{
+					"PK":              &dtypes.AttributeValueMemberS{Value: "CONTROL#blast-radius"},
+					"SK":              &dtypes.AttributeValueMemberS{Value: "CONTROL#blast-radius"},
+					"max_held_bytes": &dtypes.AttributeValueMemberN{Value: "1000"},
+				},
+			}, nil
+		},
+	}
+
+	stats := types.ExperimentStats{
+		HeldBytes: 1001,
+	}
+
+	err := newSafety(api).CheckBlastRadius(context.Background(), stats)
+	if err == nil {
+		t.Fatal("expected error when HeldBytes exceeds max_held_bytes")
+	}
+}
+
+func TestDynamoDBSafety_CheckBlastRadius_MaxMutationsExceeded(t *testing.T) {
+	t.Parallel()
+
+	api := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, _ *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{
+				Item: map[string]dtypes.AttributeValue{
+					"PK":            &dtypes.AttributeValueMemberS{Value: "CONTROL#blast-radius"},
+					"SK":            &dtypes.AttributeValueMemberS{Value: "CONTROL#blast-radius"},
+					"max_mutations": &dtypes.AttributeValueMemberN{Value: "5"},
+				},
+			}, nil
+		},
+	}
+
+	stats := types.ExperimentStats{
+		MutationsApplied: 6,
+	}
+
+	err := newSafety(api).CheckBlastRadius(context.Background(), stats)
+	if err == nil {
+		t.Fatal("expected error when MutationsApplied exceeds max_mutations")
+	}
+}
+
+func TestDynamoDBSafety_CheckBlastRadius_HeldBytesWithinLimit(t *testing.T) {
+	t.Parallel()
+
+	api := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, _ *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{
+				Item: map[string]dtypes.AttributeValue{
+					"PK":              &dtypes.AttributeValueMemberS{Value: "CONTROL#blast-radius"},
+					"SK":              &dtypes.AttributeValueMemberS{Value: "CONTROL#blast-radius"},
+					"max_held_bytes": &dtypes.AttributeValueMemberN{Value: "5000"},
+					"max_mutations":  &dtypes.AttributeValueMemberN{Value: "10"},
+				},
+			}, nil
+		},
+	}
+
+	stats := types.ExperimentStats{
+		HeldBytes:        4000,
+		MutationsApplied: 9,
+	}
+
+	if err := newSafety(api).CheckBlastRadius(context.Background(), stats); err != nil {
+		t.Fatalf("expected no error when within limits, got %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // CheckSLAWindow
 // ---------------------------------------------------------------------------

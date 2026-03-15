@@ -196,6 +196,49 @@ func TestEngineConfigValidateInvalidSeverityError(t *testing.T) {
 	}
 }
 
+func TestSafetyConfig_Validate_NegativeMaxHeldBytes(t *testing.T) {
+	t.Parallel()
+
+	cfg := types.SafetyConfig{
+		MaxAffectedPct: 25,
+		MaxPipelines:   5,
+		MaxHeldBytes:   -1,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want error for negative MaxHeldBytes")
+	}
+}
+
+func TestSafetyConfig_Validate_NegativeMaxMutations(t *testing.T) {
+	t.Parallel()
+
+	cfg := types.SafetyConfig{
+		MaxAffectedPct: 25,
+		MaxPipelines:   5,
+		MaxMutations:   -1,
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want error for negative MaxMutations")
+	}
+}
+
+func TestSafetyConfig_Validate_ZeroValues(t *testing.T) {
+	t.Parallel()
+
+	cfg := types.SafetyConfig{
+		MaxAffectedPct: 25,
+		MaxPipelines:   5,
+		MaxHeldBytes:   0,
+		MaxMutations:   0,
+	}
+	err := cfg.Validate()
+	if err != nil {
+		t.Fatalf("Validate() error = %v, want nil for zero MaxHeldBytes/MaxMutations (0 = unlimited)", err)
+	}
+}
+
 func TestSafetyConfigValidate(t *testing.T) {
 	tests := []struct {
 		name    string

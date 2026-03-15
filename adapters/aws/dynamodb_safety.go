@@ -128,6 +128,32 @@ func (s *DynamoDBSafety) CheckBlastRadius(ctx context.Context, stats types.Exper
 		}
 	}
 
+	if maxHeldBytesStr, ok := numberAttr(item, "max_held_bytes"); ok {
+		maxHeldBytes, err := strconv.ParseInt(maxHeldBytesStr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("dynamodb safety: parse max_held_bytes: %w", err)
+		}
+		if maxHeldBytes > 0 && stats.HeldBytes > maxHeldBytes {
+			return fmt.Errorf(
+				"blast radius exceeded: %d held bytes > max %d",
+				stats.HeldBytes, maxHeldBytes,
+			)
+		}
+	}
+
+	if maxMutationsStr, ok := numberAttr(item, "max_mutations"); ok {
+		maxMutations, err := strconv.Atoi(maxMutationsStr)
+		if err != nil {
+			return fmt.Errorf("dynamodb safety: parse max_mutations: %w", err)
+		}
+		if maxMutations > 0 && stats.MutationsApplied > maxMutations {
+			return fmt.Errorf(
+				"blast radius exceeded: %d mutations applied > max %d",
+				stats.MutationsApplied, maxMutations,
+			)
+		}
+	}
+
 	return nil
 }
 

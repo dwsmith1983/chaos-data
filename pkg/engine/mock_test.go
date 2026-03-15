@@ -15,7 +15,34 @@ var (
 	_ adapter.DataTransport    = (*mockTransport)(nil)
 	_ adapter.EventEmitter     = (*mockEmitter)(nil)
 	_ adapter.SafetyController = (*mockSafety)(nil)
+	_ adapter.DependencyResolver = (*mockResolver)(nil)
 )
+
+// mockResolver is a test double for adapter.DependencyResolver.
+type mockResolver struct {
+	mu           sync.Mutex
+	downstreamFn func(ctx context.Context, target string) ([]string, error)
+	calls        []string
+}
+
+func (m *mockResolver) GetDownstream(ctx context.Context, target string) ([]string, error) {
+	m.mu.Lock()
+	m.calls = append(m.calls, target)
+	fn := m.downstreamFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, target)
+	}
+	return nil, nil
+}
+
+func (m *mockResolver) getCalls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]string, len(m.calls))
+	copy(result, m.calls)
+	return result
+}
 
 // mockTransport is a test double for adapter.DataTransport.
 type mockTransport struct {
@@ -28,6 +55,7 @@ type mockTransport struct {
 	holdFn       func(ctx context.Context, key string, until time.Time) error
 	releaseFn    func(ctx context.Context, key string) error
 	releaseAllFn func(ctx context.Context) error
+	listHeldFn   func(ctx context.Context) ([]types.DataObject, error)
 
 	holdCalls []holdCall
 }
@@ -82,7 +110,10 @@ func (m *mockTransport) Release(ctx context.Context, key string) error {
 	return nil
 }
 
-func (m *mockTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
+func (m *mockTransport) ListHeld(ctx context.Context) ([]types.DataObject, error) {
+	if m.listHeldFn != nil {
+		return m.listHeldFn(ctx)
+	}
 	return nil, nil
 }
 
@@ -122,17 +153,22 @@ func (m *mockEmitter) getEvents() []types.ChaosEvent {
 type mockSafety struct {
 	mu sync.Mutex
 
-	enabled     bool
-	enabledErr  error
-	maxSev      types.Severity
-	maxSevErr   error
-	blastErr    error
-	slaAllowed  bool
-	slaErr      error
+	enabled    bool
+	enabledErr error
+	maxSev     types.Severity
+	maxSevErr  error
+	blastErr   error
+	slaAllowed bool
+	slaErr     error
 
-	cooldownErr      error
-	recordInjFn      func(ctx context.Context, scenario string) error
-	recordInjCalls   []string
+	// blastRadiusFn, when non-nil, overrides blastErr for CheckBlastRadius calls.
+	// This allows tests to vary behavior based on the stats argument (e.g.,
+	// return an error only after a threshold of affected targets is reached).
+	blastRadiusFn func(stats types.ExperimentStats) error
+
+	cooldownErr    error
+	recordInjFn    func(ctx context.Context, scenario string) error
+	recordInjCalls []string
 }
 
 func (m *mockSafety) IsEnabled(_ context.Context) (bool, error) {
@@ -143,8 +179,15 @@ func (m *mockSafety) MaxSeverity(_ context.Context) (types.Severity, error) {
 	return m.maxSev, m.maxSevErr
 }
 
-func (m *mockSafety) CheckBlastRadius(_ context.Context, _ types.ExperimentStats) error {
-	return m.blastErr
+func (m *mockSafety) CheckBlastRadius(_ context.Context, stats types.ExperimentStats) error {
+	m.mu.Lock()
+	fn := m.blastRadiusFn
+	err := m.blastErr
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(stats)
+	}
+	return err
 }
 
 func (m *mockSafety) CheckSLAWindow(_ context.Context, _ string) (bool, error) {

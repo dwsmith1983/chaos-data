@@ -50,8 +50,11 @@ func (c *ConfigSafety) MaxSeverity(_ context.Context) (types.Severity, error) {
 }
 
 // CheckBlastRadius verifies that experiment stats are within the configured
-// blast radius limits. Returns an error if AffectedPct exceeds MaxAffectedPct
-// or AffectedPipelines exceeds MaxPipelines.
+// blast radius limits. Returns an error if AffectedPct exceeds MaxAffectedPct,
+// AffectedPipelines exceeds MaxPipelines, HeldBytes exceeds MaxHeldBytes
+// (when MaxHeldBytes > 0), or MutationsApplied exceeds MaxMutations (when
+// MaxMutations > 0). A zero value for MaxHeldBytes or MaxMutations means
+// unlimited — no check is performed.
 func (c *ConfigSafety) CheckBlastRadius(_ context.Context, stats types.ExperimentStats) error {
 	if stats.AffectedPct > float64(c.config.MaxAffectedPct) {
 		return fmt.Errorf(
@@ -63,6 +66,18 @@ func (c *ConfigSafety) CheckBlastRadius(_ context.Context, stats types.Experimen
 		return fmt.Errorf(
 			"blast radius exceeded: %d pipelines > max %d",
 			stats.AffectedPipelines, c.config.MaxPipelines,
+		)
+	}
+	if c.config.MaxHeldBytes > 0 && stats.HeldBytes > c.config.MaxHeldBytes {
+		return fmt.Errorf(
+			"blast radius exceeded: %d held bytes > max %d",
+			stats.HeldBytes, c.config.MaxHeldBytes,
+		)
+	}
+	if c.config.MaxMutations > 0 && stats.MutationsApplied > c.config.MaxMutations {
+		return fmt.Errorf(
+			"blast radius exceeded: %d mutations applied > max %d",
+			stats.MutationsApplied, c.config.MaxMutations,
 		)
 	}
 	return nil

@@ -173,6 +173,71 @@ func TestConfigSafety_CheckBlastRadius(t *testing.T) {
 	}
 }
 
+func TestConfigSafety_CheckBlastRadius_MaxHeldBytesExceeded(t *testing.T) {
+	t.Parallel()
+
+	cs := local.NewConfigSafety(types.SafetyConfig{
+		MaxAffectedPct: 100,
+		MaxPipelines:   100,
+		MaxHeldBytes:   1000,
+	})
+
+	stats := types.ExperimentStats{
+		AffectedPct:       10.0,
+		AffectedPipelines: 1,
+		HeldBytes:         1001,
+	}
+
+	err := cs.CheckBlastRadius(context.Background(), stats)
+	if err == nil {
+		t.Error("CheckBlastRadius() error = nil, want error when HeldBytes exceeds MaxHeldBytes")
+	}
+}
+
+func TestConfigSafety_CheckBlastRadius_MaxMutationsExceeded(t *testing.T) {
+	t.Parallel()
+
+	cs := local.NewConfigSafety(types.SafetyConfig{
+		MaxAffectedPct: 100,
+		MaxPipelines:   100,
+		MaxMutations:   5,
+	})
+
+	stats := types.ExperimentStats{
+		AffectedPct:       10.0,
+		AffectedPipelines: 1,
+		MutationsApplied:  6,
+	}
+
+	err := cs.CheckBlastRadius(context.Background(), stats)
+	if err == nil {
+		t.Error("CheckBlastRadius() error = nil, want error when MutationsApplied exceeds MaxMutations")
+	}
+}
+
+func TestConfigSafety_CheckBlastRadius_UnlimitedWhenZero(t *testing.T) {
+	t.Parallel()
+
+	cs := local.NewConfigSafety(types.SafetyConfig{
+		MaxAffectedPct: 100,
+		MaxPipelines:   100,
+		MaxHeldBytes:   0,
+		MaxMutations:   0,
+	})
+
+	stats := types.ExperimentStats{
+		AffectedPct:       10.0,
+		AffectedPipelines: 1,
+		HeldBytes:         1_000_000_000,
+		MutationsApplied:  1_000_000,
+	}
+
+	err := cs.CheckBlastRadius(context.Background(), stats)
+	if err != nil {
+		t.Errorf("CheckBlastRadius() error = %v, want nil when MaxHeldBytes=0 and MaxMutations=0 (unlimited)", err)
+	}
+}
+
 func TestConfigSafety_CheckSLAWindow(t *testing.T) {
 	t.Parallel()
 

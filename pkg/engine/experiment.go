@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -27,6 +28,10 @@ type Experiment struct {
 	mu        sync.Mutex
 	cancel    context.CancelFunc
 	done      chan struct{}
+
+	// resolver is an optional DependencyResolver used by BlastRadius().
+	// It is set by StartExperiment when the engine has a resolver configured.
+	resolver adapter.DependencyResolver
 }
 
 // State returns the current experiment state in a thread-safe manner.
@@ -153,6 +158,44 @@ func (exp *Experiment) Stats() types.ExperimentStats {
 	}
 }
 
+// BlastRadius computes the downstream impact of the experiment by resolving
+// dependencies for every mutation record where Applied is true. It returns a
+// BlastRadiusEntry per applied record. If no DependencyResolver was configured
+// on the engine, BlastRadius returns nil. Errors from GetDownstream are silently
+// ignored on a per-record basis (fail-open) — a resolver failure does not
+// prevent the remaining records from being resolved.
+//
+// BlastRadius is intended to be called after Wait() returns.
+func (exp *Experiment) BlastRadius(ctx context.Context) []types.BlastRadiusEntry {
+	exp.mu.Lock()
+	resolver := exp.resolver
+	records := make([]types.MutationRecord, len(exp.records))
+	copy(records, exp.records)
+	exp.mu.Unlock()
+
+	if resolver == nil {
+		return nil
+	}
+
+	var entries []types.BlastRadiusEntry
+	for _, r := range records {
+		if !r.Applied {
+			continue
+		}
+		downstream, err := resolver.GetDownstream(ctx, r.ObjectKey)
+		if err != nil {
+			// Fail-open: skip this record on resolver error.
+			continue
+		}
+		entries = append(entries, types.BlastRadiusEntry{
+			MutatedObject: r.ObjectKey,
+			MutationType:  r.Mutation,
+			Downstream:    downstream,
+		})
+	}
+	return entries
+}
+
 // generateExperimentID creates a unique experiment identifier using
 // timestamp and random components.
 func generateExperimentID() string {
@@ -188,6 +231,7 @@ func (e *Engine) StartExperiment(ctx context.Context, config types.ExperimentCon
 		startTime: time.Now(),
 		cancel:    cancel,
 		done:      make(chan struct{}),
+		resolver:  e.resolver,
 	}
 
 	// Create an intercepting emitter that collects events for the experiment.

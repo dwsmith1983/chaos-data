@@ -719,8 +719,9 @@ func TestProcessObject_RecordsInjectionAfterApply(t *testing.T) {
 	transport := &mockTransport{}
 	emitter := &mockEmitter{}
 	safety := &mockSafety{
-		enabled: true,
-		maxSev:  types.SeverityCritical,
+		enabled:    true,
+		maxSev:     types.SeverityCritical,
+		slaAllowed: true, // SLA window is open; mutation must proceed so RecordInjection is called
 	}
 
 	reg := mutation.NewRegistry()
@@ -789,5 +790,425 @@ func TestProcessObject_CooldownErrorPropagatesNonSentinel(t *testing.T) {
 	}
 	if !errors.Is(err, dbErr) {
 		t.Errorf("error = %v, want wrapped %v", err, dbErr)
+	}
+}
+
+// --- Phase 1: SLA window and blast radius wiring tests ---
+
+func TestProcessObject_SkipsScenarioInSLAWindow(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{}
+	emitter := &mockEmitter{}
+	// slaAllowed=false means the pipeline IS within its SLA window —
+	// chaos injection must be skipped.
+	safety := &mockSafety{
+		enabled:    true,
+		maxSev:     types.SeverityCritical,
+		slaAllowed: false,
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithEmitter(emitter),
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.ProcessObject(context.Background(), newTestObject("data.csv"))
+	if err != nil {
+		t.Fatalf("ProcessObject() error = %v, want nil (SLA skip is not an error)", err)
+	}
+	if len(records) != 0 {
+		t.Errorf("expected 0 records (SLA window active), got %d", len(records))
+	}
+
+	// No mutation was applied, so no event should have been emitted.
+	events := emitter.getEvents()
+	if len(events) != 0 {
+		t.Errorf("expected 0 events (SLA window active), got %d", len(events))
+	}
+}
+
+func TestProcessObject_SLAWindowError(t *testing.T) {
+	t.Parallel()
+
+	transport := &mockTransport{}
+	slaErr := errors.New("SLA schedule unavailable")
+	safety := &mockSafety{
+		enabled: true,
+		maxSev:  types.SeverityCritical,
+		slaErr:  slaErr,
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithSafety(safety),
+	)
+
+	_, err := eng.ProcessObject(context.Background(), newTestObject("data.csv"))
+	if err == nil {
+		t.Fatal("ProcessObject() error = nil, want error when CheckSLAWindow fails")
+	}
+	if !errors.Is(err, slaErr) {
+		t.Errorf("error = %v, want wrapped %v", err, slaErr)
+	}
+}
+
+func TestRun_StopsInjectingWhenBlastRadiusExceeded(t *testing.T) {
+	t.Parallel()
+
+	// Three objects; blast radius check returns an error after the first
+	// affected target, so only objects before that threshold should be mutated.
+	// Crucially, Run must NOT return an error itself (fail-open passthrough).
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{
+				newTestObject("a.csv"),
+				newTestObject("b.csv"),
+				newTestObject("c.csv"),
+			}, nil
+		},
+	}
+
+	blastExceeded := errors.New("blast radius exceeded")
+	safety := &mockSafety{
+		enabled:    true,
+		maxSev:     types.SeverityCritical,
+		slaAllowed: true, // SLA window is open; mutations may proceed
+		// Return error on the first CheckBlastRadius call — after the first
+		// object is processed and its target added to the affected set.
+		blastRadiusFn: func(stats types.ExperimentStats) error {
+			if stats.AffectedTargets >= 1 {
+				return blastExceeded
+			}
+			return nil
+		},
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.Run(context.Background())
+
+	// Fail-open: blast radius breach must NOT surface as an error to the caller.
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil (blast radius breach is fail-open)", err)
+	}
+
+	// Only the first object should have been mutated before the breach stopped
+	// further injection.
+	if len(records) != 1 {
+		t.Errorf("Run() returned %d records, want 1 (injection stopped after blast radius exceeded)", len(records))
+	}
+	if len(records) > 0 && records[0].ObjectKey != "a.csv" {
+		t.Errorf("first record ObjectKey = %q, want %q", records[0].ObjectKey, "a.csv")
+	}
+}
+
+func TestRun_TracksAffectedPctAndCallsBlastRadius(t *testing.T) {
+	t.Parallel()
+
+	// 4 objects: only 2 match the scenario (prefix "hit/"), leaving 2 untouched.
+	// After Run, blast radius must have been called with accurate stats reflecting
+	// only the matched targets.
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{
+				newTestObject("hit/a.csv"),
+				newTestObject("miss/b.csv"),
+				newTestObject("hit/c.csv"),
+				newTestObject("miss/d.csv"),
+			}, nil
+		},
+	}
+
+	var capturedStats []types.ExperimentStats
+	safety := &mockSafety{
+		enabled:    true,
+		maxSev:     types.SeverityCritical,
+		slaAllowed: true, // SLA window is open; mutations may proceed
+		blastRadiusFn: func(stats types.ExperimentStats) error {
+			capturedStats = append(capturedStats, stats)
+			return nil
+		},
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	// Scenario only matches "hit/" prefix.
+	scenarios := []scenario.Scenario{newPrefixScenario("hit-delay", "hit/")}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	// Only the 2 "hit/" objects should produce applied records.
+	if len(records) != 2 {
+		t.Fatalf("Run() returned %d records, want 2", len(records))
+	}
+
+	// CheckBlastRadius must have been called after every object (4 calls).
+	if len(capturedStats) != 4 {
+		t.Fatalf("CheckBlastRadius called %d times, want 4", len(capturedStats))
+	}
+
+	// After the last object, TotalObjects must be 4.
+	lastStats := capturedStats[len(capturedStats)-1]
+	if lastStats.TotalObjects != 4 {
+		t.Errorf("final stats.TotalObjects = %d, want 4", lastStats.TotalObjects)
+	}
+	// 2 of 4 objects were affected.
+	if lastStats.AffectedTargets != 2 {
+		t.Errorf("final stats.AffectedTargets = %d, want 2", lastStats.AffectedTargets)
+	}
+	// AffectedPct must be 50%.
+	const wantPct = 50.0
+	if lastStats.AffectedPct != wantPct {
+		t.Errorf("final stats.AffectedPct = %.2f, want %.2f", lastStats.AffectedPct, wantPct)
+	}
+	// 1 unique scenario was involved.
+	if lastStats.AffectedPipelines != 1 {
+		t.Errorf("final stats.AffectedPipelines = %d, want 1", lastStats.AffectedPipelines)
+	}
+}
+
+// --- Phase 2: HeldBytes and MutationsApplied tracking ---
+
+func TestRun_TracksHeldBytesAndMutationsApplied(t *testing.T) {
+	t.Parallel()
+
+	// Three objects; all match the scenario and get mutated (Applied=true).
+	// ListHeld returns two objects with sizes 400 and 600 = 1000 total bytes.
+	heldObjects := []types.DataObject{
+		{Key: "held/a.csv", Size: 400},
+		{Key: "held/b.csv", Size: 600},
+	}
+
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{
+				newTestObject("a.csv"),
+				newTestObject("b.csv"),
+				newTestObject("c.csv"),
+			}, nil
+		},
+		listHeldFn: func(_ context.Context) ([]types.DataObject, error) {
+			return heldObjects, nil
+		},
+	}
+
+	var capturedStats []types.ExperimentStats
+	safety := &mockSafety{
+		enabled:    true,
+		maxSev:     types.SeverityCritical,
+		slaAllowed: true,
+		blastRadiusFn: func(stats types.ExperimentStats) error {
+			capturedStats = append(capturedStats, stats)
+			return nil
+		},
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("Run() returned %d records, want 3", len(records))
+	}
+
+	// CheckBlastRadius is called after each object — 3 calls.
+	if len(capturedStats) != 3 {
+		t.Fatalf("CheckBlastRadius called %d times, want 3", len(capturedStats))
+	}
+
+	last := capturedStats[len(capturedStats)-1]
+
+	// HeldBytes must equal the sum of sizes from ListHeld (400 + 600 = 1000).
+	const wantHeldBytes int64 = 1000
+	if last.HeldBytes != wantHeldBytes {
+		t.Errorf("final stats.HeldBytes = %d, want %d", last.HeldBytes, wantHeldBytes)
+	}
+
+	// MutationsApplied must reflect the 3 applied records.
+	if last.MutationsApplied != 3 {
+		t.Errorf("final stats.MutationsApplied = %d, want 3", last.MutationsApplied)
+	}
+}
+
+func TestRun_ListHeldErrorIsIgnored(t *testing.T) {
+	t.Parallel()
+
+	// ListHeld returns an error, but Run() should still succeed (fail-open)
+	// and mutations should still be applied.
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{
+				newTestObject("a.csv"),
+				newTestObject("b.csv"),
+			}, nil
+		},
+		listHeldFn: func(_ context.Context) ([]types.DataObject, error) {
+			return nil, errors.New("storage unavailable")
+		},
+	}
+
+	safety := &mockSafety{
+		enabled:    true,
+		maxSev:     types.SeverityCritical,
+		slaAllowed: true,
+		blastRadiusFn: func(stats types.ExperimentStats) error {
+			return nil
+		},
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.Run(context.Background())
+
+	// Fail-open: ListHeld error must NOT surface as an error.
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil (ListHeld error is fail-open)", err)
+	}
+
+	// Both objects should still have been mutated.
+	if len(records) != 2 {
+		t.Errorf("Run() returned %d records, want 2", len(records))
+	}
+
+	// Verify mutations were actually applied.
+	for _, r := range records {
+		if !r.Applied {
+			t.Errorf("record for %q has Applied=false, want true", r.ObjectKey)
+		}
+	}
+}
+
+func TestRun_StopsWhenMaxMutationsExceeded(t *testing.T) {
+	t.Parallel()
+
+	// Five objects; blast radius check returns error when MutationsApplied > 2.
+	// Run must stop injecting and return fail-open (no error to caller).
+	transport := &mockTransport{
+		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+			return []types.DataObject{
+				newTestObject("a.csv"),
+				newTestObject("b.csv"),
+				newTestObject("c.csv"),
+				newTestObject("d.csv"),
+				newTestObject("e.csv"),
+			}, nil
+		},
+	}
+
+	mutationsLimit := errors.New("blast radius exceeded: mutations limit")
+	safety := &mockSafety{
+		enabled:    true,
+		maxSev:     types.SeverityCritical,
+		slaAllowed: true,
+		blastRadiusFn: func(stats types.ExperimentStats) error {
+			if stats.MutationsApplied > 2 {
+				return mutationsLimit
+			}
+			return nil
+		},
+	}
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	scenarios := []scenario.Scenario{newDelayScenario("test-delay", types.SeverityLow)}
+
+	eng := engine.New(
+		defaultConfig(),
+		transport,
+		reg,
+		scenarios,
+		engine.WithSafety(safety),
+	)
+
+	records, err := eng.Run(context.Background())
+
+	// Fail-open: mutation limit breach must NOT surface as an error.
+	if err != nil {
+		t.Fatalf("Run() error = %v, want nil (mutations limit is fail-open)", err)
+	}
+
+	// After the 3rd object is processed, MutationsApplied becomes 3 which
+	// exceeds the limit of 2; Run stops. So exactly 3 records are returned.
+	if len(records) != 3 {
+		t.Errorf("Run() returned %d records, want 3 (stopped after limit exceeded on 3rd check)", len(records))
 	}
 }

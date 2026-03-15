@@ -20,6 +20,7 @@ type Engine struct {
 	transport adapter.DataTransport
 	emitter   adapter.EventEmitter
 	safety    adapter.SafetyController
+	resolver  adapter.DependencyResolver
 	mutations *mutation.Registry
 	scenarios []scenario.Scenario
 }
@@ -38,6 +39,15 @@ func WithEmitter(e adapter.EventEmitter) EngineOption {
 func WithSafety(s adapter.SafetyController) EngineOption {
 	return func(eng *Engine) {
 		eng.safety = s
+	}
+}
+
+// WithDependencyResolver attaches a DependencyResolver to the engine.
+// When set, experiments created by StartExperiment will use the resolver
+// to compute downstream blast radius via Experiment.BlastRadius().
+func WithDependencyResolver(r adapter.DependencyResolver) EngineOption {
+	return func(eng *Engine) {
+		eng.resolver = r
 	}
 }
 
@@ -125,6 +135,17 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 			}
 		}
 
+		// Check SLA window for this scenario — skip if within window.
+		if e.safety != nil {
+			slaOK, slaErr := e.safety.CheckSLAWindow(ctx, sc.Name)
+			if slaErr != nil {
+				return records, fmt.Errorf("process object %q: scenario %q: sla window: %w", obj.Key, sc.Name, slaErr)
+			}
+			if !slaOK {
+				continue // skip scenario — pipeline is within its SLA window
+			}
+		}
+
 		// Get mutation from registry.
 		m, err := e.mutations.Get(sc.Mutation.Type)
 		if err != nil {
@@ -189,13 +210,24 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 // with the partial results collected so far and the error. This is intentional
 // for chaos testing -- partial mutations create unpredictable state that should
 // not be compounded by continuing to mutate additional objects.
+//
+// Blast radius enforcement uses fail-open semantics: when CheckBlastRadius
+// returns an error, Run stops injecting further objects and returns what was
+// collected so far without surfacing the blast radius error to the caller.
 func (e *Engine) Run(ctx context.Context) ([]types.MutationRecord, error) {
 	objects, err := e.transport.List(ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("run: list objects: %w", err)
 	}
 
-	var allRecords []types.MutationRecord
+	totalObjects := len(objects)
+
+	var (
+		allRecords       []types.MutationRecord
+		affectedTargets  = make(map[string]struct{})
+		affectedScens    = make(map[string]struct{})
+		mutationsApplied int
+	)
 
 	for _, obj := range objects {
 		if err := ctx.Err(); err != nil {
@@ -206,7 +238,43 @@ func (e *Engine) Run(ctx context.Context) ([]types.MutationRecord, error) {
 		if err != nil {
 			return allRecords, fmt.Errorf("run: %w", err)
 		}
+
+		// Track affected targets and scenario names from applied records.
+		for _, r := range records {
+			if r.Applied {
+				affectedTargets[r.ObjectKey] = struct{}{}
+				affectedScens[r.Mutation] = struct{}{}
+				mutationsApplied++
+			}
+		}
+
 		allRecords = append(allRecords, records...)
+
+		// Check blast radius after each object. Fail-open: stop injecting
+		// but do not surface the error to the caller.
+		if e.safety != nil {
+			stats := types.ExperimentStats{
+				TotalObjects:      totalObjects,
+				AffectedTargets:   len(affectedTargets),
+				AffectedPipelines: len(affectedScens),
+				MutationsApplied:  mutationsApplied,
+			}
+			if totalObjects > 0 {
+				stats.AffectedPct = float64(stats.AffectedTargets) / float64(totalObjects) * 100
+			}
+
+			// Sum sizes of currently held objects to track held bytes.
+			// ListHeld errors are silently ignored: fail-open on stats collection.
+			if held, listErr := e.transport.ListHeld(ctx); listErr == nil {
+				for _, h := range held {
+					stats.HeldBytes += h.Size
+				}
+			}
+
+			if brErr := e.safety.CheckBlastRadius(ctx, stats); brErr != nil {
+				break // stop injecting; return partial results without error
+			}
+		}
 	}
 
 	return allRecords, nil

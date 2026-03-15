@@ -31,6 +31,8 @@ type SafetyConfig struct {
 	CooldownDuration  Duration `yaml:"cooldown_duration"   json:"cooldown_duration"`
 	KillSwitchEnabled bool     `yaml:"kill_switch_enabled" json:"kill_switch_enabled"`
 	SLAWindowMinutes  int      `yaml:"sla_window_minutes"  json:"sla_window_minutes"`
+	MaxHeldBytes      int64    `yaml:"max_held_bytes"      json:"max_held_bytes"`
+	MaxMutations      int      `yaml:"max_mutations"       json:"max_mutations"`
 }
 
 // ExperimentConfig holds the configuration for a single experiment run.
@@ -67,6 +69,12 @@ func (c SafetyConfig) Validate() error {
 	}
 	if c.SLAWindowMinutes < 0 {
 		return fmt.Errorf("sla_window_minutes must be >= 0, got %d", c.SLAWindowMinutes)
+	}
+	if c.MaxHeldBytes < 0 {
+		return fmt.Errorf("max_held_bytes must be >= 0, got %d", c.MaxHeldBytes)
+	}
+	if c.MaxMutations < 0 {
+		return fmt.Errorf("max_mutations must be >= 0, got %d", c.MaxMutations)
 	}
 	return nil
 }

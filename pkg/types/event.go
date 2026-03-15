@@ -40,10 +40,13 @@ func (e ChaosEvent) Validate() error {
 // ExperimentStats holds aggregate statistics for a chaos experiment run.
 type ExperimentStats struct {
 	ExperimentID      string    `json:"experiment_id"`
+	TotalObjects      int       `json:"total_objects"`
 	TotalEvents       int       `json:"total_events"`
 	AffectedTargets   int       `json:"affected_targets"`
 	AffectedPipelines int       `json:"affected_pipelines"`
 	AffectedPct       float64   `json:"affected_pct"`
+	HeldBytes         int64     `json:"held_bytes"`
+	MutationsApplied  int       `json:"mutations_applied"`
 	StartTime         time.Time `json:"start_time"`
 	EndTime           time.Time `json:"end_time"`
 }
@@ -61,6 +64,15 @@ func (s ExperimentStats) Validate() error {
 	}
 	if s.AffectedPipelines < 0 {
 		return fmt.Errorf("experiment stats: affected_pipelines must be >= 0, got %d", s.AffectedPipelines)
+	}
+	if s.HeldBytes < 0 {
+		return fmt.Errorf("experiment stats: held_bytes must be >= 0, got %d", s.HeldBytes)
+	}
+	if s.MutationsApplied < 0 {
+		return fmt.Errorf("experiment stats: mutations_applied must be >= 0, got %d", s.MutationsApplied)
+	}
+	if s.TotalObjects < 0 {
+		return fmt.Errorf("experiment stats: total_objects must be >= 0, got %d", s.TotalObjects)
 	}
 	return nil
 }
