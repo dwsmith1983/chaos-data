@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
@@ -13,6 +14,13 @@ import (
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 	"github.com/spf13/cobra"
 )
+
+// heldObjectEntry is the JSON representation of a held object in API responses.
+type heldObjectEntry struct {
+	Key          string `json:"key"`
+	Size         int64  `json:"size"`
+	LastModified string `json:"last_modified"`
+}
 
 // apiRequest is the JSON envelope for API requests.
 type apiRequest struct {
@@ -51,8 +59,14 @@ func runAPI(in io.Reader, out io.Writer) error {
 	switch req.Action {
 	case "catalog":
 		return handleCatalogAPI(out)
+	case "inject":
+		return handleInjectAPI(out, req.Params)
+	case "release":
+		return handleReleaseAPI(out, req.Params)
 	case "run":
 		return handleRunAPI(out, req.Params)
+	case "status":
+		return handleStatusAPI(out, req.Params)
 	default:
 		return writeResponse(out, apiResponse{
 			Success: false,
@@ -150,6 +164,201 @@ func handleRunAPI(out io.Writer, params map[string]string) error {
 		return writeResponse(out, apiResponse{
 			Success: false,
 			Error:   fmt.Sprintf("engine run: %v", err),
+		})
+	}
+
+	return writeResponse(out, apiResponse{
+		Success: true,
+		Data:    records,
+	})
+}
+
+func handleStatusAPI(out io.Writer, params map[string]string) error {
+	inputDir := params["input"]
+	outputDir := params["output"]
+
+	if inputDir == "" || outputDir == "" {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   "missing required params: input, output",
+		})
+	}
+
+	// Resolve to absolute paths to prevent relative path confusion.
+	inputDir, err := filepath.Abs(inputDir)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("invalid input path: %v", err),
+		})
+	}
+	outputDir, err = filepath.Abs(outputDir)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("invalid output path: %v", err),
+		})
+	}
+
+	transport := local.NewFSTransport(inputDir, outputDir)
+	ctx := context.Background()
+
+	held, err := transport.ListHeld(ctx)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("list held: %v", err),
+		})
+	}
+
+	entries := make([]heldObjectEntry, 0, len(held))
+	for _, obj := range held {
+		entries = append(entries, heldObjectEntry{
+			Key:          obj.Key,
+			Size:         obj.Size,
+			LastModified: obj.LastModified.Format(time.RFC3339),
+		})
+	}
+
+	return writeResponse(out, apiResponse{
+		Success: true,
+		Data:    entries,
+	})
+}
+
+func handleReleaseAPI(out io.Writer, params map[string]string) error {
+	inputDir := params["input"]
+	outputDir := params["output"]
+	key := params["key"]
+
+	if inputDir == "" || outputDir == "" {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   "missing required params: input, output",
+		})
+	}
+
+	// Resolve to absolute paths to prevent relative path confusion.
+	inputDir, err := filepath.Abs(inputDir)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("invalid input path: %v", err),
+		})
+	}
+	outputDir, err = filepath.Abs(outputDir)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("invalid output path: %v", err),
+		})
+	}
+
+	transport := local.NewFSTransport(inputDir, outputDir)
+	ctx := context.Background()
+
+	if key != "" {
+		if err := transport.Release(ctx, key); err != nil {
+			return writeResponse(out, apiResponse{
+				Success: false,
+				Error:   fmt.Sprintf("release %q: %v", key, err),
+			})
+		}
+		return writeResponse(out, apiResponse{
+			Success: true,
+			Data:    map[string]string{"released": key},
+		})
+	}
+
+	if err := transport.ReleaseAll(ctx); err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("release all: %v", err),
+		})
+	}
+
+	return writeResponse(out, apiResponse{
+		Success: true,
+		Data:    map[string]string{"released": "all"},
+	})
+}
+
+func handleInjectAPI(out io.Writer, params map[string]string) error {
+	scenarioName := params["scenario"]
+	inputDir := params["input"]
+	outputDir := params["output"]
+	stateDB := params["state_db"]
+
+	if scenarioName == "" || inputDir == "" || outputDir == "" {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   "missing required params: scenario, input, output",
+		})
+	}
+
+	// Resolve to absolute paths to prevent relative path confusion.
+	inputDir, err := filepath.Abs(inputDir)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("invalid input path: %v", err),
+		})
+	}
+	outputDir, err = filepath.Abs(outputDir)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("invalid output path: %v", err),
+		})
+	}
+
+	if stateDB == "" {
+		stateDB = ":memory:"
+	}
+
+	sc, err := loadScenario(scenarioName)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("load scenario: %v", err),
+		})
+	}
+
+	stateStore, err := local.NewSQLiteState(stateDB)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("open state store: %v", err),
+		})
+	}
+	defer stateStore.Close()
+
+	transport := local.NewFSTransport(inputDir, outputDir)
+	registry := fullStatefulRegistry(stateStore)
+
+	cfg := types.EngineConfig{
+		Mode: "deterministic",
+		Safety: types.SafetyConfig{
+			MaxSeverity:    types.SeverityCritical,
+			MaxAffectedPct: 100,
+			MaxPipelines:   100,
+		},
+	}
+
+	eng := engine.New(
+		cfg,
+		transport,
+		registry,
+		[]scenario.Scenario{sc},
+	)
+
+	ctx := context.Background()
+	obj := types.DataObject{Key: "inject"}
+	records, err := eng.ProcessObject(ctx, obj)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   fmt.Sprintf("inject: %v", err),
 		})
 	}
 

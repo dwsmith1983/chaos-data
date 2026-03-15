@@ -19,9 +19,12 @@ func rootCmd() *cobra.Command {
 
 	root.AddCommand(apiCmd())
 	root.AddCommand(catalogCmd())
+	root.AddCommand(injectCmd())
+	root.AddCommand(releaseCmd())
 	root.AddCommand(runCmd())
 	root.AddCommand(serveCmd())
 	root.AddCommand(replayCmd())
+	root.AddCommand(statusCmd())
 
 	return root
 }

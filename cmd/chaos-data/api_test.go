@@ -266,3 +266,188 @@ func TestAPICmd_Help(t *testing.T) {
 		t.Errorf("expected help to mention 'JSON stdin/stdout API', got:\n%s", output)
 	}
 }
+
+func TestRunAPI_StatusAction(t *testing.T) {
+	t.Parallel()
+
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	reqJSON, err := json.Marshal(apiRequest{
+		Action: "status",
+		Params: map[string]string{
+			"input":  inputDir,
+			"output": outputDir,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	in := bytes.NewBuffer(reqJSON)
+	out := &bytes.Buffer{}
+
+	if err := runAPI(in, out); err != nil {
+		t.Fatalf("runAPI() error = %v", err)
+	}
+
+	var resp apiResponse
+	if err := json.NewDecoder(out).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("expected success=true, got error: %s", resp.Error)
+	}
+}
+
+func TestRunAPI_StatusAction_MissingParams(t *testing.T) {
+	t.Parallel()
+
+	input := bytes.NewBufferString(`{"action":"status","params":{}}`)
+	output := &bytes.Buffer{}
+
+	if err := runAPI(input, output); err != nil {
+		t.Fatalf("runAPI() error = %v", err)
+	}
+
+	var resp apiResponse
+	if err := json.NewDecoder(output).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Success {
+		t.Error("expected success=false for missing params")
+	}
+}
+
+func TestRunAPI_ReleaseAction(t *testing.T) {
+	t.Parallel()
+
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	reqJSON, err := json.Marshal(apiRequest{
+		Action: "release",
+		Params: map[string]string{
+			"input":  inputDir,
+			"output": outputDir,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	in := bytes.NewBuffer(reqJSON)
+	out := &bytes.Buffer{}
+
+	if err := runAPI(in, out); err != nil {
+		t.Fatalf("runAPI() error = %v", err)
+	}
+
+	var resp apiResponse
+	if err := json.NewDecoder(out).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("expected success=true, got error: %s", resp.Error)
+	}
+}
+
+func TestRunAPI_ReleaseAction_MissingParams(t *testing.T) {
+	t.Parallel()
+
+	input := bytes.NewBufferString(`{"action":"release","params":{}}`)
+	output := &bytes.Buffer{}
+
+	if err := runAPI(input, output); err != nil {
+		t.Fatalf("runAPI() error = %v", err)
+	}
+
+	var resp apiResponse
+	if err := json.NewDecoder(output).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Success {
+		t.Error("expected success=false for missing params")
+	}
+}
+
+func TestRunAPI_InjectAction(t *testing.T) {
+	t.Parallel()
+
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+	scenarioDir := t.TempDir()
+
+	scenarioYAML := `name: api-inject-test
+description: API inject test
+category: state-consistency
+severity: low
+version: 1
+target:
+  layer: state
+mutation:
+  type: phantom-sensor
+  params:
+    pipeline: api-pipe
+    sensor_key: health
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 1m
+  sla_aware: false
+`
+	scenarioFile := filepath.Join(scenarioDir, "api-inject.yaml")
+	if err := os.WriteFile(scenarioFile, []byte(scenarioYAML), 0o644); err != nil {
+		t.Fatalf("write scenario file: %v", err)
+	}
+
+	reqJSON, err := json.Marshal(apiRequest{
+		Action: "inject",
+		Params: map[string]string{
+			"scenario": scenarioFile,
+			"input":    inputDir,
+			"output":   outputDir,
+			"state_db": ":memory:",
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	in := bytes.NewBuffer(reqJSON)
+	out := &bytes.Buffer{}
+
+	if err := runAPI(in, out); err != nil {
+		t.Fatalf("runAPI() error = %v", err)
+	}
+
+	var resp apiResponse
+	if err := json.NewDecoder(out).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Success {
+		t.Errorf("expected success=true, got error: %s", resp.Error)
+	}
+	if resp.Data == nil {
+		t.Error("expected data to be non-nil for successful inject")
+	}
+}
+
+func TestRunAPI_InjectAction_MissingParams(t *testing.T) {
+	t.Parallel()
+
+	input := bytes.NewBufferString(`{"action":"inject","params":{}}`)
+	output := &bytes.Buffer{}
+
+	if err := runAPI(input, output); err != nil {
+		t.Fatalf("runAPI() error = %v", err)
+	}
+
+	var resp apiResponse
+	if err := json.NewDecoder(output).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Success {
+		t.Error("expected success=false for missing params")
+	}
+}
