@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
@@ -87,6 +88,10 @@ func injectCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("read --dry-run flag: %w", err)
 			}
+			assertWait, err := cmd.Flags().GetBool("assert-wait")
+			if err != nil {
+				return fmt.Errorf("read --assert-wait flag: %w", err)
+			}
 
 			sc, err := loadScenario(scenarioFlag)
 			if err != nil {
@@ -109,7 +114,11 @@ func injectCmd() *cobra.Command {
 					MaxAffectedPct: 100,
 					MaxPipelines:   100,
 				},
-				DryRun: dryRun,
+				DryRun:     dryRun,
+				AssertWait: assertWait,
+			}
+			if assertWait {
+				cfg.AssertPollInterval = types.Duration{Duration: time.Second}
 			}
 
 			eng := engine.New(
@@ -135,6 +144,7 @@ func injectCmd() *cobra.Command {
 	cmd.Flags().StringP("output", "o", "", "Output directory")
 	cmd.Flags().String("state-db", ":memory:", "SQLite state database path (use :memory: for ephemeral)")
 	cmd.Flags().Bool("dry-run", false, "Preview injection without applying side effects")
+	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout")
 
 	_ = cmd.MarkFlagRequired("scenario")
 	_ = cmd.MarkFlagRequired("input")

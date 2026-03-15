@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"text/tabwriter"
+	"time"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
@@ -75,6 +76,10 @@ func runCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("read --dry-run flag: %w", err)
 			}
+			assertWait, err := cmd.Flags().GetBool("assert-wait")
+			if err != nil {
+				return fmt.Errorf("read --assert-wait flag: %w", err)
+			}
 
 			sc, err := loadScenario(scenarioFlag)
 			if err != nil {
@@ -88,6 +93,10 @@ func runCmd() *cobra.Command {
 
 			cfg := types.Defaults()
 			cfg.DryRun = dryRun
+			cfg.AssertWait = assertWait
+			if assertWait {
+				cfg.AssertPollInterval = types.Duration{Duration: time.Second}
+			}
 
 			eng := engine.New(
 				cfg,
@@ -112,6 +121,7 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringP("input", "i", "", "Input staging directory")
 	cmd.Flags().StringP("output", "o", "", "Output directory")
 	cmd.Flags().Bool("dry-run", false, "Preview mutations without applying them")
+	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout")
 
 	_ = cmd.MarkFlagRequired("scenario")
 	_ = cmd.MarkFlagRequired("input")
