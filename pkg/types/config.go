@@ -14,7 +14,9 @@ type EngineConfig struct {
 	Mode    string        `yaml:"mode"    json:"mode"`
 	Adapter AdapterConfig `yaml:"adapter" json:"adapter"`
 	Safety  SafetyConfig  `yaml:"safety"  json:"safety"`
-	DryRun  bool          `yaml:"dry_run" json:"dry_run"`
+	DryRun             bool     `yaml:"dry_run"             json:"dry_run"`
+	AssertWait         bool     `yaml:"assert_wait"         json:"assert_wait"`
+	AssertPollInterval Duration `yaml:"assert_poll_interval" json:"assert_poll_interval"`
 }
 
 // AdapterConfig identifies which adapter to use and its settings.
@@ -48,6 +50,12 @@ type ExperimentConfig struct {
 func (c EngineConfig) Validate() error {
 	if !ValidMode(c.Mode) {
 		return fmt.Errorf("%w: %q", ErrInvalidMode, c.Mode)
+	}
+	if c.AssertPollInterval.Duration < 0 {
+		return fmt.Errorf("assert_poll_interval must be >= 0, got %v", c.AssertPollInterval.Duration)
+	}
+	if c.AssertWait && c.AssertPollInterval.Duration <= 0 {
+		return fmt.Errorf("assert_poll_interval must be > 0 when assert_wait is enabled")
 	}
 	return c.Safety.Validate()
 }

@@ -39,10 +39,10 @@ func validScenario() scenario.Scenario {
 			Cooldown:        types.Duration{Duration: 5 * time.Minute},
 			SLAAware:        true,
 		},
-		Expected: map[string]scenario.ExpectedResponse{
-			"alert": {
-				Event:  "data_late_alert",
-				Within: types.Duration{Duration: 10 * time.Minute},
+		Expected: &scenario.ExpectedResponse{
+			Within: types.Duration{Duration: 10 * time.Minute},
+			Asserts: []types.Assertion{
+				{Type: types.AssertSensorState, Target: "pipeline-a/upstream", Condition: types.CondIsStale},
 			},
 		},
 	}
@@ -69,9 +69,11 @@ safety:
   cooldown: 5m
   sla_aware: true
 expected_response:
-  alert:
-    event: data_late_alert
-    within: 10m
+  within: 10m
+  asserts:
+    - type: sensor_state
+      target: pipeline-a/upstream
+      condition: is_stale
 `
 
 func TestParseValidYAML(t *testing.T) {
@@ -125,15 +127,18 @@ func TestParseValidYAML(t *testing.T) {
 	if !s.Safety.SLAAware {
 		t.Error("Safety.SLAAware = false, want true")
 	}
-	resp, ok := s.Expected["alert"]
-	if !ok {
-		t.Fatal("Expected[alert] not found")
+	if s.Expected == nil {
+		t.Fatal("Expected is nil")
 	}
-	if resp.Event != "data_late_alert" {
-		t.Errorf("Expected[alert].Event = %q, want %q", resp.Event, "data_late_alert")
+	if s.Expected.Within.Duration != 10*time.Minute {
+		t.Errorf("Expected.Within = %v, want %v", s.Expected.Within.Duration, 10*time.Minute)
 	}
-	if resp.Within.Duration != 10*time.Minute {
-		t.Errorf("Expected[alert].Within = %v, want %v", resp.Within.Duration, 10*time.Minute)
+	if len(s.Expected.Asserts) != 1 {
+		t.Fatalf("Expected.Asserts len = %d, want 1", len(s.Expected.Asserts))
+	}
+	if s.Expected.Asserts[0].Condition != types.CondIsStale {
+		t.Errorf("Expected.Asserts[0].Condition = %q, want %q",
+			s.Expected.Asserts[0].Condition, types.CondIsStale)
 	}
 }
 
@@ -197,6 +202,24 @@ func TestValidateFailures(t *testing.T) {
 				s.Safety.MaxAffectedPct = 101
 			},
 		},
+		{name: "expected_response with zero within", modify: func(s *scenario.Scenario) {
+			s.Expected = &scenario.ExpectedResponse{
+				Within:  types.Duration{Duration: 0},
+				Asserts: []types.Assertion{{Type: types.AssertSensorState, Target: "p/k", Condition: types.CondIsStale}},
+			}
+		}},
+		{name: "expected_response with empty asserts", modify: func(s *scenario.Scenario) {
+			s.Expected = &scenario.ExpectedResponse{
+				Within:  types.Duration{Duration: time.Minute},
+				Asserts: []types.Assertion{},
+			}
+		}},
+		{name: "expected_response with invalid assertion", modify: func(s *scenario.Scenario) {
+			s.Expected = &scenario.ExpectedResponse{
+				Within:  types.Duration{Duration: time.Minute},
+				Asserts: []types.Assertion{{Type: types.AssertionType("bogus"), Target: "x", Condition: types.CondExists}},
+			}
+		}},
 	}
 
 	for _, tt := range tests {
@@ -276,17 +299,20 @@ func TestJSONRoundTrip(t *testing.T) {
 		t.Errorf("Safety.SLAAware = %v, want %v",
 			decoded.Safety.SLAAware, original.Safety.SLAAware)
 	}
-	resp, ok := decoded.Expected["alert"]
-	if !ok {
-		t.Fatal("Expected[alert] not found after round-trip")
+	if decoded.Expected == nil {
+		t.Fatal("Expected is nil after JSON round-trip")
 	}
-	if resp.Event != original.Expected["alert"].Event {
-		t.Errorf("Expected[alert].Event = %q, want %q",
-			resp.Event, original.Expected["alert"].Event)
+	if decoded.Expected.Within != original.Expected.Within {
+		t.Errorf("Expected.Within = %v, want %v",
+			decoded.Expected.Within, original.Expected.Within)
 	}
-	if resp.Within != original.Expected["alert"].Within {
-		t.Errorf("Expected[alert].Within = %v, want %v",
-			resp.Within, original.Expected["alert"].Within)
+	if len(decoded.Expected.Asserts) != len(original.Expected.Asserts) {
+		t.Fatalf("Expected.Asserts len = %d, want %d",
+			len(decoded.Expected.Asserts), len(original.Expected.Asserts))
+	}
+	if decoded.Expected.Asserts[0] != original.Expected.Asserts[0] {
+		t.Errorf("Expected.Asserts[0] = %+v, want %+v",
+			decoded.Expected.Asserts[0], original.Expected.Asserts[0])
 	}
 }
 
@@ -335,6 +361,21 @@ func TestYAMLRoundTrip(t *testing.T) {
 	if decoded.Safety.SLAAware != original.Safety.SLAAware {
 		t.Errorf("Safety.SLAAware = %v, want %v",
 			decoded.Safety.SLAAware, original.Safety.SLAAware)
+	}
+	if decoded.Expected == nil {
+		t.Fatal("Expected is nil after YAML round-trip")
+	}
+	if decoded.Expected.Within != original.Expected.Within {
+		t.Errorf("Expected.Within = %v, want %v",
+			decoded.Expected.Within, original.Expected.Within)
+	}
+	if len(decoded.Expected.Asserts) != len(original.Expected.Asserts) {
+		t.Fatalf("Expected.Asserts len = %d, want %d",
+			len(decoded.Expected.Asserts), len(original.Expected.Asserts))
+	}
+	if decoded.Expected.Asserts[0] != original.Expected.Asserts[0] {
+		t.Errorf("Expected.Asserts[0] = %+v, want %+v",
+			decoded.Expected.Asserts[0], original.Expected.Asserts[0])
 	}
 }
 

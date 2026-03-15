@@ -17,6 +17,7 @@ type ChaosEvent struct {
 	Params       map[string]string `json:"params"`
 	Timestamp    time.Time         `json:"timestamp"`
 	Mode         string            `json:"mode"`
+	Assertions   []AssertionResult `json:"assertions,omitempty"`
 }
 
 // Validate checks that the ChaosEvent has all required fields populated

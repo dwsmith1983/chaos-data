@@ -44,7 +44,7 @@ type Scenario struct {
 	Mutation    MutationSpec                `yaml:"mutation"                   json:"mutation"`
 	Probability float64                    `yaml:"probability"                json:"probability"`
 	Safety      ScenarioSafety              `yaml:"safety"                     json:"safety"`
-	Expected    map[string]ExpectedResponse `yaml:"expected_response,omitempty" json:"expected_response,omitempty"`
+	Expected    *ExpectedResponse `yaml:"expected_response,omitempty" json:"expected_response,omitempty"`
 }
 
 // TargetSpec identifies which layer, transport, and objects a scenario targets.
@@ -75,8 +75,8 @@ type ScenarioSafety struct {
 
 // ExpectedResponse describes an expected downstream reaction to chaos injection.
 type ExpectedResponse struct {
-	Event  string         `yaml:"event"  json:"event"`
-	Within types.Duration `yaml:"within" json:"within"`
+	Within  types.Duration    `yaml:"within"  json:"within"`
+	Asserts []types.Assertion `yaml:"asserts" json:"asserts"`
 }
 
 // Validate checks that all required fields are present and within valid ranges.
@@ -104,6 +104,19 @@ func (s Scenario) Validate() error {
 	}
 	if s.Safety.MaxAffectedPct < 0 || s.Safety.MaxAffectedPct > 100 {
 		return fmt.Errorf("%w: max_affected_pct must be in [0, 100], got %d", ErrInvalidScenario, s.Safety.MaxAffectedPct)
+	}
+	if s.Expected != nil {
+		if s.Expected.Within.Duration <= 0 {
+			return fmt.Errorf("%w: expected_response within must be > 0", ErrInvalidScenario)
+		}
+		if len(s.Expected.Asserts) == 0 {
+			return fmt.Errorf("%w: expected_response must have at least one assertion", ErrInvalidScenario)
+		}
+		for i, a := range s.Expected.Asserts {
+			if err := a.Validate(); err != nil {
+				return fmt.Errorf("%w: expected_response asserts[%d]: %s", ErrInvalidScenario, i, err)
+			}
+		}
 	}
 	return nil
 }
