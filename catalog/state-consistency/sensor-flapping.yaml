@@ -1,0 +1,28 @@
+name: sensor-flapping
+description: Rapidly alternate sensor state between two values to test race conditions in stream processing systems that read sensor status.
+category: state-consistency
+severity: severe
+version: 1
+
+target:
+  layer: state
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: sensor-flapping
+  params:
+    sensor_key: "arrival"
+    pipeline: ""
+    flap_count: "4"
+    start_status: "ready"
+    alternate_status: "pending"
+
+probability: 0.2
+
+safety:
+  max_affected_pct: 10
+  cooldown: 25m
+  sla_aware: true

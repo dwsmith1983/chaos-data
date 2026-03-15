@@ -1,0 +1,27 @@
+name: timestamp-forgery
+description: Injects a sensor where the DynamoDB LastUpdated field disagrees with an embedded payload timestamp, simulating clock-skew between the state store and the upstream data source.
+category: state-consistency
+severity: moderate
+version: 1
+
+target:
+  layer: state
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: timestamp-forgery
+  params:
+    sensor_key: "arrival"
+    pipeline: ""
+    last_updated_offset: "-6h"
+    payload_timestamp_offset: "+2h"
+
+probability: 0.3
+
+safety:
+  max_affected_pct: 20
+  cooldown: 15m
+  sla_aware: true

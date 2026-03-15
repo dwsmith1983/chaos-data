@@ -6,7 +6,8 @@ import (
 )
 
 // RegisterAll registers all Interlock sensor and trigger mutations with the
-// given registry. It returns the first registration error encountered.
+// given registry (5 sensor + 4 trigger = 9 total). It returns the first
+// registration error encountered.
 func RegisterAll(reg *mutation.Registry, store adapter.StateStore, cfg Config) error {
 	if err := RegisterSensors(reg, store, cfg); err != nil {
 		return err
@@ -14,13 +15,16 @@ func RegisterAll(reg *mutation.Registry, store adapter.StateStore, cfg Config) e
 	return RegisterTriggers(reg, store, cfg)
 }
 
-// RegisterSensors registers the three Interlock sensor mutations:
-// InterlockStaleSensor, InterlockPhantomSensor, and InterlockSplitSensor.
+// RegisterSensors registers the five Interlock sensor mutations:
+// InterlockStaleSensor, InterlockPhantomSensor, InterlockSplitSensor,
+// InterlockSensorFlapping, and InterlockTimestampForgery.
 func RegisterSensors(reg *mutation.Registry, store adapter.StateStore, cfg Config) error {
 	sensors := []mutation.Mutation{
 		NewInterlockStaleSensor(store, cfg),
 		NewInterlockPhantomSensor(store, cfg),
 		NewInterlockSplitSensor(store, cfg),
+		NewInterlockSensorFlapping(store, cfg),
+		NewInterlockTimestampForgery(store, cfg),
 	}
 	for _, m := range sensors {
 		if err := reg.Register(m); err != nil {

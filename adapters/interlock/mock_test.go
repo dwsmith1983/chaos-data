@@ -183,7 +183,7 @@ func (m *mockStateStore) ReadSensor(_ context.Context, pipeline, key string) (ad
 	s, ok := m.sensors[sKey]
 	m.mu.Unlock()
 	if !ok {
-		return adapter.SensorData{}, fmt.Errorf("sensor not found: %s/%s", pipeline, key)
+		return adapter.SensorData{}, nil // matches SQLiteState: zero-value + nil for not-found
 	}
 	return s, nil
 }

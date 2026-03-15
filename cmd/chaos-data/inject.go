@@ -43,6 +43,8 @@ func fullStatefulRegistry(store adapter.StateStore) *mutation.Registry {
 		mutation.NewStaleSensorMutation(store),
 		mutation.NewPhantomSensorMutation(store),
 		mutation.NewSplitSensorMutation(store),
+		mutation.NewSensorFlappingMutation(store),
+		mutation.NewTimestampForgeryMutation(store),
 		mutation.NewPhantomTriggerMutation(store),
 		mutation.NewJobKillMutation(store),
 		mutation.NewTriggerTimeoutMutation(store),

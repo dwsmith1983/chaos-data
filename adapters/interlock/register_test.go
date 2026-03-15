@@ -26,8 +26,8 @@ func TestRegisterAll(t *testing.T) {
 	}
 
 	names := reg.List()
-	if len(names) != 7 {
-		t.Fatalf("RegisterAll() registered %d mutations, want 7: %v", len(names), names)
+	if len(names) != 9 {
+		t.Fatalf("RegisterAll() registered %d mutations, want 9: %v", len(names), names)
 	}
 
 	want := []string{
@@ -35,8 +35,10 @@ func TestRegisterAll(t *testing.T) {
 		"interlock-job-kill",
 		"interlock-phantom-sensor",
 		"interlock-phantom-trigger",
+		"interlock-sensor-flapping",
 		"interlock-split-sensor",
 		"interlock-stale-sensor",
+		"interlock-timestamp-forgery",
 		"interlock-trigger-timeout",
 	}
 
@@ -64,14 +66,16 @@ func TestRegisterSensors(t *testing.T) {
 	}
 
 	names := reg.List()
-	if len(names) != 3 {
-		t.Fatalf("RegisterSensors() registered %d mutations, want 3: %v", len(names), names)
+	if len(names) != 5 {
+		t.Fatalf("RegisterSensors() registered %d mutations, want 5: %v", len(names), names)
 	}
 
 	want := []string{
 		"interlock-phantom-sensor",
+		"interlock-sensor-flapping",
 		"interlock-split-sensor",
 		"interlock-stale-sensor",
+		"interlock-timestamp-forgery",
 	}
 
 	for i, name := range want {

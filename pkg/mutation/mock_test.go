@@ -212,7 +212,8 @@ func (m *mockStateStore) ReadSensor(_ context.Context, pipeline, key string) (ad
 	sKey := pipeline + "/" + key
 	s, ok := m.sensors[sKey]
 	if !ok {
-		return adapter.SensorData{}, fmt.Errorf("sensor not found: %s/%s", pipeline, key)
+		// Return zero-value + nil to match SQLiteState behavior for not-found rows.
+		return adapter.SensorData{}, nil
 	}
 	return s, nil
 }

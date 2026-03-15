@@ -23,8 +23,8 @@ const testJSONL = `{"user":"alice","action":"login","ts":"2024-01-01T00:00:00Z"}
 {"user":"carol","action":"logout","ts":"2024-01-01T02:00:00Z"}
 `
 
-// fullRegistry registers all 21 mutations (13 data + 8 state/compound).
-// The interlock adapter wraps the same 7 state mutations with pipeline-prefix
+// fullRegistry registers all 23 mutations (13 data + 10 state/compound).
+// The interlock adapter wraps the same 9 state mutations with pipeline-prefix
 // enrichment — it doesn't add new mutation types.
 func fullRegistry(t *testing.T, store adapter.StateStore) *mutation.Registry {
 	t.Helper()
@@ -53,6 +53,8 @@ func fullRegistry(t *testing.T, store adapter.StateStore) *mutation.Registry {
 		mutation.NewStaleSensorMutation(store),
 		mutation.NewPhantomSensorMutation(store),
 		mutation.NewSplitSensorMutation(store),
+		mutation.NewSensorFlappingMutation(store),
+		mutation.NewTimestampForgeryMutation(store),
 		mutation.NewPhantomTriggerMutation(store),
 		mutation.NewJobKillMutation(store),
 		mutation.NewTriggerTimeoutMutation(store),
@@ -569,6 +571,61 @@ func TestE2E_StateMutations(t *testing.T) {
 				// Final value should be the last in the sequence.
 				if sensor.Status != types.SensorStatusStale {
 					t.Errorf("expected final status=stale, got %q", sensor.Status)
+				}
+			},
+		},
+		{
+			name:    "sensor_flapping",
+			factory: func(store adapter.StateStore) mutation.Mutation { return mutation.NewSensorFlappingMutation(store) },
+			params: map[string]string{
+				"sensor_key":       "flap",
+				"pipeline":         "stream",
+				"flap_count":       "4",
+				"start_status":     "ready",
+				"alternate_status": "pending",
+			},
+			assert: func(t *testing.T, store *local.SQLiteState) {
+				t.Helper()
+				sensor, err := store.ReadSensor(context.Background(), "stream", "flap")
+				if err != nil {
+					t.Fatalf("read sensor: %v", err)
+				}
+				// Final write is iteration 3 (0-indexed), which is odd → alternate_status "pending".
+				if sensor.Status != types.SensorStatusPending {
+					t.Errorf("expected final status=pending, got %q", sensor.Status)
+				}
+			},
+		},
+		{
+			name:    "timestamp_forgery",
+			factory: func(store adapter.StateStore) mutation.Mutation { return mutation.NewTimestampForgeryMutation(store) },
+			params: map[string]string{
+				"sensor_key":               "clock",
+				"pipeline":                 "ts-pipe",
+				"last_updated_offset":      "-6h",
+				"payload_timestamp_offset": "+2h",
+			},
+			assert: func(t *testing.T, store *local.SQLiteState) {
+				t.Helper()
+				sensor, err := store.ReadSensor(context.Background(), "ts-pipe", "clock")
+				if err != nil {
+					t.Fatalf("read sensor: %v", err)
+				}
+				age := time.Since(sensor.LastUpdated)
+				if age < 5*time.Hour {
+					t.Errorf("expected LastUpdated ~6h ago, got age %v", age)
+				}
+				payloadStr, ok := sensor.Metadata["payload_timestamp"]
+				if !ok {
+					t.Fatal("Metadata[\"payload_timestamp\"] not set")
+				}
+				payload, err := time.Parse(time.RFC3339Nano, payloadStr)
+				if err != nil {
+					t.Fatalf("parse payload_timestamp: %v", err)
+				}
+				// payload_timestamp should be ~2h in the future.
+				if time.Until(payload) < time.Hour {
+					t.Errorf("expected payload_timestamp ~2h ahead, got %v until", time.Until(payload))
 				}
 			},
 		},
@@ -1212,6 +1269,8 @@ func TestE2E_AllMutations_SingleRun(t *testing.T) {
 		{"stale-sensor", "state-consistency", map[string]string{"sensor_key": "arrival", "pipeline": "ingest", "last_update_age": "24h"}},
 		{"phantom-sensor", "state-consistency", map[string]string{"pipeline": "phantom", "sensor_key": "health"}},
 		{"split-sensor", "state-consistency", map[string]string{"sensor_key": "load", "pipeline": "etl", "conflicting_values": "ready,stale"}},
+		{"sensor-flapping", "state-consistency", map[string]string{"sensor_key": "flap", "pipeline": "stream", "flap_count": "4"}},
+		{"timestamp-forgery", "state-consistency", map[string]string{"sensor_key": "clock", "pipeline": "ts-pipe", "last_updated_offset": "-6h"}},
 		{"phantom-trigger", "orchestrator", map[string]string{"pipeline": "nightly", "schedule": "daily", "date": "2024-01-15"}},
 		{"job-kill", "orchestrator", map[string]string{"pipeline": "batch", "schedule": "hourly", "date": "2024-01-15"}},
 		{"trigger-timeout", "orchestrator", map[string]string{"pipeline": "sync", "schedule": "daily", "date": "2024-01-15"}},
