@@ -23,7 +23,7 @@ const testJSONL = `{"user":"alice","action":"login","ts":"2024-01-01T00:00:00Z"}
 {"user":"carol","action":"logout","ts":"2024-01-01T02:00:00Z"}
 `
 
-// fullRegistry registers all 20 mutations (12 data + 8 state/compound).
+// fullRegistry registers all 21 mutations (13 data + 8 state/compound).
 // The interlock adapter wraps the same 7 state mutations with pipeline-prefix
 // enrichment — it doesn't add new mutation types.
 func fullRegistry(t *testing.T, store adapter.StateStore) *mutation.Registry {
@@ -42,6 +42,7 @@ func fullRegistry(t *testing.T, store adapter.StateStore) *mutation.Registry {
 		&mutation.SlowWriteMutation{},
 		&mutation.StreamingLagMutation{},
 		&mutation.RollingDegradationMutation{},
+		&mutation.OutOfOrderMutation{},
 	}
 	for _, m := range dataMutations {
 		if err := reg.Register(m); err != nil {
@@ -425,6 +426,76 @@ func TestE2E_DataMutations(t *testing.T) {
 
 			tt.assert(t, records[0], stagingDir, outputDir)
 		})
+	}
+}
+
+// --- Out-of-Order Mutation Test ---
+
+// TestE2E_OutOfOrder uses two partition files to verify that the older partition
+// is placed in .chaos-hold/ while the newer partition passes through unaffected.
+func TestE2E_OutOfOrder(t *testing.T) {
+	t.Parallel()
+
+	stagingDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	// Write two partition files: the older one should be held, the newer passes through.
+	writeTestFiles(t, stagingDir, map[string]string{
+		"par_hour=14_data.jsonl": testJSONL,
+		"par_hour=15_data.jsonl": testJSONL,
+	})
+
+	transport := local.NewFSTransport(stagingDir, outputDir)
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.OutOfOrderMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	sc := testScenarioWithPrefix("out-of-order-test", "out-of-order", "par_hour=", types.SeverityLow,
+		map[string]string{
+			"delay_older_by":  "1h",
+			"partition_field": "par_hour",
+			"older_value":     "14",
+			"newer_value":     "15",
+		})
+
+	eng := engine.New(e2eConfig(), transport, reg, []scenario.Scenario{sc})
+
+	records, err := eng.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records (one per file), got %d", len(records))
+	}
+
+	applied := map[string]bool{}
+	for _, rec := range records {
+		applied[rec.ObjectKey] = rec.Applied
+	}
+
+	// Older partition must be held (Applied=true).
+	if !applied["par_hour=14_data.jsonl"] {
+		t.Error("expected par_hour=14_data.jsonl to be Applied=true (held)")
+	}
+
+	// Newer partition passes through (Applied=false, no error).
+	if applied["par_hour=15_data.jsonl"] {
+		t.Error("expected par_hour=15_data.jsonl to be Applied=false (passthrough)")
+	}
+
+	// Verify physical hold: older file should be in .chaos-hold/.
+	holdDir := filepath.Join(stagingDir, ".chaos-hold")
+	if !fileExists(t, filepath.Join(holdDir, "par_hour=14_data.jsonl")) {
+		t.Error("par_hour=14_data.jsonl not found in .chaos-hold/")
+	}
+	if !fileExists(t, filepath.Join(holdDir, "par_hour=14_data.jsonl.meta")) {
+		t.Error("par_hour=14_data.jsonl.meta sidecar missing in .chaos-hold/")
+	}
+
+	// Newer file must NOT be in hold.
+	if fileExists(t, filepath.Join(holdDir, "par_hour=15_data.jsonl")) {
+		t.Error("par_hour=15_data.jsonl should not be in .chaos-hold/")
 	}
 }
 

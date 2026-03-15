@@ -12,11 +12,12 @@ target:
     match: ""
 
 mutation:
-  type: delay
+  type: out-of-order
   params:
-    duration: "2h"
-    jitter: "30m"
-    release: "true"
+    delay_older_by: "2h"
+    partition_field: "par_hour"
+    older_value: "13"
+    newer_value: "14"
 
 probability: 0.35
 
