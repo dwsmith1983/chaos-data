@@ -121,7 +121,7 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringP("input", "i", "", "Input staging directory")
 	cmd.Flags().StringP("output", "o", "", "Output directory")
 	cmd.Flags().Bool("dry-run", false, "Preview mutations without applying them")
-	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout")
+	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout (polls every 1s)")
 
 	_ = cmd.MarkFlagRequired("scenario")
 	_ = cmd.MarkFlagRequired("input")

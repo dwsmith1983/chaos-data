@@ -194,6 +194,36 @@ func TestRunCmd_InvalidScenario(t *testing.T) {
 	}
 }
 
+func TestRunCmd_AssertWait(t *testing.T) {
+	t.Parallel()
+
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	testData := `{"id":1,"name":"alice"}
+`
+	testFile := filepath.Join(inputDir, "test-data.jsonl")
+	if err := os.WriteFile(testFile, []byte(testData), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	cmd := rootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"run",
+		"--scenario", "late-data",
+		"--input", inputDir,
+		"--output", outputDir,
+		"--assert-wait",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("run --assert-wait failed: %v\noutput: %s", err, buf.String())
+	}
+}
+
 func TestDefaultRegistry_AllMutations(t *testing.T) {
 	t.Parallel()
 

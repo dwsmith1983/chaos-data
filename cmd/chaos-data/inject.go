@@ -144,7 +144,7 @@ func injectCmd() *cobra.Command {
 	cmd.Flags().StringP("output", "o", "", "Output directory")
 	cmd.Flags().String("state-db", ":memory:", "SQLite state database path (use :memory: for ephemeral)")
 	cmd.Flags().Bool("dry-run", false, "Preview injection without applying side effects")
-	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout")
+	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout (polls every 1s)")
 
 	_ = cmd.MarkFlagRequired("scenario")
 	_ = cmd.MarkFlagRequired("input")

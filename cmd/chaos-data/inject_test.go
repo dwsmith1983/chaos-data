@@ -173,6 +173,54 @@ safety:
 	}
 }
 
+func TestInjectCmd_AssertWait(t *testing.T) {
+	t.Parallel()
+
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+	scenarioDir := t.TempDir()
+
+	scenarioYAML := `name: inject-assert-test
+description: Assert-wait inject test
+category: state-consistency
+severity: low
+version: 1
+target:
+  layer: state
+mutation:
+  type: phantom-sensor
+  params:
+    pipeline: assert-pipe
+    sensor_key: health
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 1m
+  sla_aware: false
+`
+	scenarioFile := filepath.Join(scenarioDir, "assert-test.yaml")
+	if err := os.WriteFile(scenarioFile, []byte(scenarioYAML), 0o644); err != nil {
+		t.Fatalf("write scenario file: %v", err)
+	}
+
+	cmd := rootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"inject",
+		"--scenario", scenarioFile,
+		"--input", inputDir,
+		"--output", outputDir,
+		"--state-db", ":memory:",
+		"--assert-wait",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("inject --assert-wait failed: %v\noutput: %s", err, buf.String())
+	}
+}
+
 func TestInjectCmd_InvalidScenario(t *testing.T) {
 	t.Parallel()
 
