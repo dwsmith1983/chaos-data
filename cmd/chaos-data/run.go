@@ -23,6 +23,7 @@ func defaultRegistry() *mutation.Registry {
 		&mutation.DropMutation{},
 		&mutation.CorruptMutation{},
 		&mutation.OutOfOrderMutation{},
+		&mutation.PostRunDriftMutation{},
 	} {
 		if err := r.Register(m); err != nil {
 			panic(fmt.Sprintf("register built-in mutation: %v", err))

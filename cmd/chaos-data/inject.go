@@ -33,6 +33,7 @@ func fullStatefulRegistry(store adapter.StateStore) *mutation.Registry {
 		&mutation.StreamingLagMutation{},
 		&mutation.RollingDegradationMutation{},
 		&mutation.OutOfOrderMutation{},
+		&mutation.PostRunDriftMutation{},
 	}
 	for _, m := range dataMutations {
 		if err := r.Register(m); err != nil {
