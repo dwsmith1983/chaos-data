@@ -25,6 +25,7 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(serveCmd())
 	root.AddCommand(replayCmd())
 	root.AddCommand(statusCmd())
+	root.AddCommand(watchCmd())
 
 	return root
 }
