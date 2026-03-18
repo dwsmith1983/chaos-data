@@ -182,39 +182,62 @@ func (t *FSTransport) Hold(_ context.Context, key string, until time.Time) error
 	return nil
 }
 
-// ListHeld returns HeldObjects currently in the hold directory, excluding
-// .meta sidecars and subdirectories. If the hold directory does not exist,
-// an empty slice is returned without error.
+// ListHeld returns HeldObjects currently in the hold directory. The walk is
+// recursive so nested keys (e.g. "ingest/file.jsonl") are included. .meta
+// sidecars are excluded from results. HeldUntil is populated from the
+// accompanying .meta sidecar; a missing or corrupt sidecar leaves HeldUntil
+// as the zero value. If the hold directory does not exist, nil is returned
+// without error.
 func (t *FSTransport) ListHeld(_ context.Context) ([]types.HeldObject, error) {
-	entries, err := os.ReadDir(t.holdDir)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("list hold dir: %w", err)
+	if _, err := os.Stat(t.holdDir); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
 	}
 
 	var objects []types.HeldObject
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	err := filepath.WalkDir(t.holdDir, func(p string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		name := entry.Name()
-		if strings.HasSuffix(name, ".meta") {
-			continue
+		if d.IsDir() {
+			return nil
 		}
-		info, err := entry.Info()
+		if strings.HasSuffix(d.Name(), ".meta") {
+			return nil
+		}
+
+		info, err := d.Info()
 		if err != nil {
-			return nil, fmt.Errorf("stat held %s: %w", name, err)
+			return fmt.Errorf("stat held %s: %w", d.Name(), err)
 		}
-		objects = append(objects, types.HeldObject{
+
+		rel, err := filepath.Rel(t.holdDir, p)
+		if err != nil {
+			return fmt.Errorf("rel path %s: %w", p, err)
+		}
+
+		obj := types.HeldObject{
 			DataObject: types.DataObject{
-				Key:          name,
+				Key:          rel,
 				Size:         info.Size(),
 				LastModified: info.ModTime(),
 			},
-		})
+		}
+
+		metaPath := p + ".meta"
+		if metaBytes, readErr := os.ReadFile(metaPath); readErr == nil {
+			var meta holdMeta
+			if json.Unmarshal(metaBytes, &meta) == nil {
+				obj.HeldUntil = meta.ReleaseAt
+			}
+		}
+
+		objects = append(objects, obj)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk hold dir: %w", err)
 	}
+
 	return objects, nil
 }
 

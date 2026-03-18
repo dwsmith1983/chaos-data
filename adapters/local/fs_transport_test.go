@@ -2,6 +2,7 @@ package local_test
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -775,4 +776,165 @@ func TestFSTransport_PathTraversal(t *testing.T) {
 			t.Errorf("Release() error = %v, want 'escapes root' message", err)
 		}
 	})
+}
+
+func TestFSTransport_HoldData(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	output := t.TempDir()
+	transport := local.NewFSTransport(staging, output)
+
+	data := strings.NewReader("{\"id\":1}\n{\"id\":2}\n")
+	until := time.Now().Add(10 * time.Minute)
+
+	err := transport.HoldData(context.Background(), "drift.jsonl", data, until)
+	if err != nil {
+		t.Fatalf("HoldData() error = %v", err)
+	}
+
+	holdPath := filepath.Join(staging, ".chaos-hold", "drift.jsonl")
+	if _, err := os.Stat(holdPath); err != nil {
+		t.Fatalf("held data file not found: %v", err)
+	}
+
+	metaPath := holdPath + ".meta"
+	metaBytes, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatalf("sidecar not found: %v", err)
+	}
+	var meta struct {
+		ReleaseAt time.Time `json:"release_at"`
+	}
+	if err := json.Unmarshal(metaBytes, &meta); err != nil {
+		t.Fatalf("parse sidecar: %v", err)
+	}
+	if !meta.ReleaseAt.Equal(until) {
+		t.Errorf("sidecar release_at = %v, want %v", meta.ReleaseAt, until)
+	}
+}
+
+func TestFSTransport_HoldData_NestedKey(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	output := t.TempDir()
+	transport := local.NewFSTransport(staging, output)
+
+	data := strings.NewReader("{\"id\":1}\n")
+	until := time.Now().Add(5 * time.Minute)
+
+	err := transport.HoldData(context.Background(), "ingest/drift.jsonl", data, until)
+	if err != nil {
+		t.Fatalf("HoldData() error = %v", err)
+	}
+
+	holdPath := filepath.Join(staging, ".chaos-hold", "ingest", "drift.jsonl")
+	if _, err := os.Stat(holdPath); err != nil {
+		t.Fatalf("nested held data file not found: %v", err)
+	}
+}
+
+func TestFSTransport_ListHeld_PopulatesHeldUntil(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	output := t.TempDir()
+	transport := local.NewFSTransport(staging, output)
+
+	until := time.Now().Add(10 * time.Minute).Truncate(time.Second)
+	data := strings.NewReader("{\"id\":1}")
+	if err := transport.HoldData(context.Background(), "file.jsonl", data, until); err != nil {
+		t.Fatalf("HoldData: %v", err)
+	}
+
+	held, err := transport.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(held) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(held))
+	}
+	if held[0].Key != "file.jsonl" {
+		t.Errorf("Key = %q, want %q", held[0].Key, "file.jsonl")
+	}
+	if !held[0].HeldUntil.Equal(until) {
+		t.Errorf("HeldUntil = %v, want %v", held[0].HeldUntil, until)
+	}
+}
+
+func TestFSTransport_ListHeld_Recursive(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	output := t.TempDir()
+	transport := local.NewFSTransport(staging, output)
+
+	until := time.Now().Add(5 * time.Minute).Truncate(time.Second)
+	data := strings.NewReader("{\"id\":1}")
+	if err := transport.HoldData(context.Background(), "ingest/nested.jsonl", data, until); err != nil {
+		t.Fatalf("HoldData: %v", err)
+	}
+
+	held, err := transport.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(held) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(held))
+	}
+	if held[0].Key != "ingest/nested.jsonl" {
+		t.Errorf("Key = %q, want %q", held[0].Key, "ingest/nested.jsonl")
+	}
+}
+
+func TestFSTransport_ListHeld_MissingSidecar(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	output := t.TempDir()
+	transport := local.NewFSTransport(staging, output)
+
+	holdDir := filepath.Join(staging, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(holdDir, "orphan.jsonl"), []byte("{\"id\":1}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	held, err := transport.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(held) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(held))
+	}
+	if !held[0].HeldUntil.IsZero() {
+		t.Error("HeldUntil should be zero when sidecar is missing")
+	}
+}
+
+func TestFSTransport_ListHeld_CorruptSidecar(t *testing.T) {
+	t.Parallel()
+	staging := t.TempDir()
+	output := t.TempDir()
+	transport := local.NewFSTransport(staging, output)
+
+	holdDir := filepath.Join(staging, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(holdDir, "bad.jsonl"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(holdDir, "bad.jsonl.meta"), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	held, err := transport.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v", err)
+	}
+	if len(held) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(held))
+	}
+	if !held[0].HeldUntil.IsZero() {
+		t.Error("HeldUntil should be zero when sidecar is corrupt")
+	}
 }
