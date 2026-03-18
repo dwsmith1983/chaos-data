@@ -182,10 +182,10 @@ func (t *FSTransport) Hold(_ context.Context, key string, until time.Time) error
 	return nil
 }
 
-// ListHeld returns DataObjects currently in the hold directory, excluding
+// ListHeld returns HeldObjects currently in the hold directory, excluding
 // .meta sidecars and subdirectories. If the hold directory does not exist,
 // an empty slice is returned without error.
-func (t *FSTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
+func (t *FSTransport) ListHeld(_ context.Context) ([]types.HeldObject, error) {
 	entries, err := os.ReadDir(t.holdDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -194,7 +194,7 @@ func (t *FSTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
 		return nil, fmt.Errorf("list hold dir: %w", err)
 	}
 
-	var objects []types.DataObject
+	var objects []types.HeldObject
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -207,10 +207,12 @@ func (t *FSTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
 		if err != nil {
 			return nil, fmt.Errorf("stat held %s: %w", name, err)
 		}
-		objects = append(objects, types.DataObject{
-			Key:          name,
-			Size:         info.Size(),
-			LastModified: info.ModTime(),
+		objects = append(objects, types.HeldObject{
+			DataObject: types.DataObject{
+				Key:          name,
+				Size:         info.Size(),
+				LastModified: info.ModTime(),
+			},
 		})
 	}
 	return objects, nil
@@ -235,6 +237,51 @@ func (t *FSTransport) ReleaseAll(ctx context.Context) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// HoldData writes data directly to holdDir/key and writes a .meta sidecar
+// recording the release time. Unlike Hold, it does not require the data to
+// exist in stagingDir first.
+// Returns an error if key would escape the hold directory.
+func (t *FSTransport) HoldData(_ context.Context, key string, data io.Reader, until time.Time) error {
+	dst, err := safeJoin(t.holdDir, key)
+	if err != nil {
+		return fmt.Errorf("hold data %s: %w", key, err)
+	}
+
+	if err := os.MkdirAll(t.holdDir, 0o755); err != nil {
+		return fmt.Errorf("create hold dir: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("create hold subdirectories for %s: %w", key, err)
+	}
+
+	meta := holdMeta{ReleaseAt: until}
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshal hold metadata for %s: %w", key, err)
+	}
+
+	metaPath := filepath.Join(t.holdDir, key+".meta")
+	if err := os.WriteFile(metaPath, metaBytes, 0o644); err != nil {
+		return fmt.Errorf("write hold metadata for %s: %w", key, err)
+	}
+
+	f, err := os.Create(dst)
+	if err != nil {
+		os.Remove(metaPath)
+		return fmt.Errorf("create held file %s: %w", key, err)
+	}
+
+	if _, err := io.Copy(f, data); err != nil {
+		f.Close()
+		os.Remove(dst)
+		os.Remove(metaPath)
+		return fmt.Errorf("write held data %s: %w", key, err)
+	}
+
+	return f.Close()
 }
 
 // Release moves a file from holdDir to outputDir and removes the .meta

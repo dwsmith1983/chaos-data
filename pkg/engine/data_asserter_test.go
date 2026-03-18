@@ -130,10 +130,10 @@ func TestDataStateAsserter_NotExists_Exists(t *testing.T) {
 func TestDataStateAsserter_IsHeld_Found(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listHeldFn: func(_ context.Context) ([]types.DataObject, error) {
-			return []types.DataObject{
-				{Key: "other.jsonl"},
-				{Key: "target.jsonl"},
+		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
+			return []types.HeldObject{
+				{DataObject: types.DataObject{Key: "other.jsonl"}},
+				{DataObject: types.DataObject{Key: "target.jsonl"}},
 			}, nil
 		},
 	}
@@ -152,8 +152,8 @@ func TestDataStateAsserter_IsHeld_Found(t *testing.T) {
 func TestDataStateAsserter_IsHeld_NotFound(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listHeldFn: func(_ context.Context) ([]types.DataObject, error) {
-			return []types.DataObject{{Key: "other.jsonl"}}, nil
+		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
+			return []types.HeldObject{{DataObject: types.DataObject{Key: "other.jsonl"}}}, nil
 		},
 	}
 	da := engine.NewDataStateAsserter(transport)
@@ -171,7 +171,7 @@ func TestDataStateAsserter_IsHeld_NotFound(t *testing.T) {
 func TestDataStateAsserter_IsHeld_Error(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listHeldFn: func(_ context.Context) ([]types.DataObject, error) {
+		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return nil, errors.New("storage unavailable")
 		},
 	}

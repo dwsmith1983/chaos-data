@@ -106,9 +106,14 @@ func (m *mockTransport) Release(_ context.Context, key string) error {
 	return nil
 }
 
-func (m *mockTransport) ListHeld(_ context.Context) ([]types.DataObject, error) {
+func (m *mockTransport) ListHeld(_ context.Context) ([]types.HeldObject, error) {
 	m.record(transportCall{Method: "ListHeld"})
 	return nil, nil
+}
+
+func (m *mockTransport) HoldData(_ context.Context, _ string, _ io.Reader, _ time.Time) error {
+	m.record(transportCall{Method: "HoldData"})
+	return nil
 }
 
 func (m *mockTransport) ReleaseAll(_ context.Context) error {

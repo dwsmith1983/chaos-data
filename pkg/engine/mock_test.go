@@ -76,7 +76,8 @@ type mockTransport struct {
 	holdFn       func(ctx context.Context, key string, until time.Time) error
 	releaseFn    func(ctx context.Context, key string) error
 	releaseAllFn func(ctx context.Context) error
-	listHeldFn   func(ctx context.Context) ([]types.DataObject, error)
+	listHeldFn   func(ctx context.Context) ([]types.HeldObject, error)
+	holdDataFn   func(ctx context.Context, key string, data io.Reader, until time.Time) error
 
 	holdCalls []holdCall
 }
@@ -131,11 +132,18 @@ func (m *mockTransport) Release(ctx context.Context, key string) error {
 	return nil
 }
 
-func (m *mockTransport) ListHeld(ctx context.Context) ([]types.DataObject, error) {
+func (m *mockTransport) ListHeld(ctx context.Context) ([]types.HeldObject, error) {
 	if m.listHeldFn != nil {
 		return m.listHeldFn(ctx)
 	}
 	return nil, nil
+}
+
+func (m *mockTransport) HoldData(ctx context.Context, key string, data io.Reader, until time.Time) error {
+	if m.holdDataFn != nil {
+		return m.holdDataFn(ctx, key, data, until)
+	}
+	return nil
 }
 
 func (m *mockTransport) ReleaseAll(ctx context.Context) error {

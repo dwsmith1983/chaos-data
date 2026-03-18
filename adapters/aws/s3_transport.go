@@ -194,11 +194,11 @@ func (t *S3Transport) Hold(ctx context.Context, key string, until time.Time) err
 	return nil
 }
 
-// ListHeld returns DataObjects currently held under the hold prefix,
+// ListHeld returns HeldObjects currently held under the hold prefix,
 // excluding .meta sidecars. Keys are returned relative to the hold
 // prefix. Pagination is handled transparently via continuation tokens.
-func (t *S3Transport) ListHeld(ctx context.Context) ([]types.DataObject, error) {
-	var objects []types.DataObject
+func (t *S3Transport) ListHeld(ctx context.Context) ([]types.HeldObject, error) {
+	var objects []types.HeldObject
 	var continuationToken *string
 
 	for {
@@ -228,7 +228,7 @@ func (t *S3Transport) ListHeld(ctx context.Context) ([]types.DataObject, error) 
 			if obj.LastModified != nil {
 				do.LastModified = *obj.LastModified
 			}
-			objects = append(objects, do)
+			objects = append(objects, types.HeldObject{DataObject: do})
 		}
 
 		if !aws.ToBool(out.IsTruncated) {
@@ -238,6 +238,11 @@ func (t *S3Transport) ListHeld(ctx context.Context) ([]types.DataObject, error) 
 	}
 
 	return objects, nil
+}
+
+// HoldData is not supported by S3Transport. Use Write followed by Hold instead.
+func (t *S3Transport) HoldData(_ context.Context, _ string, _ io.Reader, _ time.Time) error {
+	return fmt.Errorf("HoldData not supported for S3Transport")
 }
 
 // ReleaseAll immediately releases all currently held objects. It calls

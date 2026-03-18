@@ -32,9 +32,9 @@ type DataTransport interface {
 	// track hold state.
 	Release(ctx context.Context, key string) error
 
-	// ListHeld returns DataObjects currently in hold state. Implementations
+	// ListHeld returns HeldObjects currently in hold state. Implementations
 	// should exclude metadata sidecars from the result.
-	ListHeld(ctx context.Context) ([]types.DataObject, error)
+	ListHeld(ctx context.Context) ([]types.HeldObject, error)
 
 	// ReleaseAll immediately releases all currently held objects, making
 	// them visible to downstream consumers. It is a best-effort, fail-open
@@ -42,4 +42,10 @@ type DataTransport interface {
 	// errors.Join but do not prevent remaining releases from being attempted.
 	// This is intended as a kill-switch safety mechanism.
 	ReleaseAll(ctx context.Context) error
+
+	// HoldData writes data directly to held state with the given release time.
+	// Unlike the Write+Hold sequence, this does not require the data to exist
+	// in staging first. The data is placed directly into the hold directory
+	// (or equivalent) with appropriate metadata recording the release time.
+	HoldData(ctx context.Context, key string, data io.Reader, until time.Time) error
 }

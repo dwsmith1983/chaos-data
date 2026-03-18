@@ -1024,9 +1024,9 @@ func TestRun_TracksHeldBytesAndMutationsApplied(t *testing.T) {
 
 	// Three objects; all match the scenario and get mutated (Applied=true).
 	// ListHeld returns two objects with sizes 400 and 600 = 1000 total bytes.
-	heldObjects := []types.DataObject{
-		{Key: "held/a.csv", Size: 400},
-		{Key: "held/b.csv", Size: 600},
+	heldObjects := []types.HeldObject{
+		{DataObject: types.DataObject{Key: "held/a.csv", Size: 400}},
+		{DataObject: types.DataObject{Key: "held/b.csv", Size: 600}},
 	}
 
 	transport := &mockTransport{
@@ -1037,7 +1037,7 @@ func TestRun_TracksHeldBytesAndMutationsApplied(t *testing.T) {
 				newTestObject("c.csv"),
 			}, nil
 		},
-		listHeldFn: func(_ context.Context) ([]types.DataObject, error) {
+		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return heldObjects, nil
 		},
 	}
@@ -1107,7 +1107,7 @@ func TestRun_ListHeldErrorIsIgnored(t *testing.T) {
 				newTestObject("b.csv"),
 			}, nil
 		},
-		listHeldFn: func(_ context.Context) ([]types.DataObject, error) {
+		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return nil, errors.New("storage unavailable")
 		},
 	}
