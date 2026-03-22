@@ -1282,6 +1282,143 @@ func TestEvaluateAssertions_Timeout(t *testing.T) {
 	}
 }
 
+// --- TargetValidator integration tests ---
+
+// TestEvaluateAssertions_TargetValidator_InvalidTargetSkipsPoll verifies that
+// when the asserter implements TargetValidator and ValidateTarget returns an
+// error, the assertion result records that error immediately without entering
+// the poll loop (Evaluate is never called).
+func TestEvaluateAssertions_TargetValidator_InvalidTargetSkipsPoll(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{}
+	asserter := &mockValidatingAsserter{
+		mockAsserter: mockAsserter{
+			supported: map[types.AssertionType]bool{types.AssertSensorState: true},
+			results:   map[string]bool{},
+		},
+		invalidTargets: map[string]bool{"bad-target": true},
+	}
+	cfg := defaultConfig()
+	cfg.AssertWait = true
+	cfg.AssertPollInterval = types.Duration{Duration: 10 * time.Millisecond}
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertSensorState, Target: "bad-target", Condition: types.CondIsStale},
+	}, 5*time.Second)
+
+	eng := engine.New(cfg, transport, mutation.NewRegistry(), []scenario.Scenario{sc}, engine.WithAsserter(asserter))
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	// The result must not be satisfied and must carry the validation error.
+	if results[0].Satisfied {
+		t.Error("expected Satisfied=false for invalid target")
+	}
+	if results[0].Error == "" {
+		t.Error("expected non-empty Error for invalid target")
+	}
+
+	// ValidateTarget must have been called once.
+	calls := asserter.getValidateCalls()
+	if len(calls) != 1 {
+		t.Errorf("ValidateTarget called %d times, want 1", len(calls))
+	}
+
+	// Evaluate must NOT have been called (invalid targets skip the poll loop).
+	asserter.mu.Lock()
+	evalCount := asserter.callCount
+	asserter.mu.Unlock()
+	if evalCount != 0 {
+		t.Errorf("Evaluate called %d times, want 0 (invalid target should not poll)", evalCount)
+	}
+}
+
+// TestEvaluateAssertions_TargetValidator_ValidTargetEntersPollLoop verifies that
+// when the asserter implements TargetValidator and ValidateTarget returns nil,
+// the assertion enters the poll loop normally (Evaluate is called).
+func TestEvaluateAssertions_TargetValidator_ValidTargetEntersPollLoop(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{}
+	asserter := &mockValidatingAsserter{
+		mockAsserter: mockAsserter{
+			supported: map[types.AssertionType]bool{types.AssertSensorState: true},
+			results:   map[string]bool{"pipeline/key": true},
+		},
+		invalidTargets: map[string]bool{}, // nothing invalid
+	}
+	cfg := defaultConfig()
+	cfg.AssertWait = true
+	cfg.AssertPollInterval = types.Duration{Duration: 10 * time.Millisecond}
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertSensorState, Target: "pipeline/key", Condition: types.CondIsStale},
+	}, 5*time.Second)
+
+	eng := engine.New(cfg, transport, mutation.NewRegistry(), []scenario.Scenario{sc}, engine.WithAsserter(asserter))
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if !results[0].Satisfied {
+		t.Error("expected Satisfied=true for valid target")
+	}
+
+	// ValidateTarget must have been called.
+	calls := asserter.getValidateCalls()
+	if len(calls) != 1 {
+		t.Errorf("ValidateTarget called %d times, want 1", len(calls))
+	}
+
+	// Evaluate must have been called at least once.
+	asserter.mu.Lock()
+	evalCount := asserter.callCount
+	asserter.mu.Unlock()
+	if evalCount == 0 {
+		t.Error("Evaluate was not called for valid target")
+	}
+}
+
+// TestEvaluateAssertions_NoTargetValidator_AllTargetsEnterPollLoop verifies
+// backward-compat: when the asserter does NOT implement TargetValidator, all
+// assertion targets enter the poll loop regardless of format.
+func TestEvaluateAssertions_NoTargetValidator_AllTargetsEnterPollLoop(t *testing.T) {
+	t.Parallel()
+	transport := &mockTransport{}
+	// Use the plain mockAsserter (does not implement TargetValidator).
+	asserter := &mockAsserter{
+		supported: map[types.AssertionType]bool{types.AssertSensorState: true},
+		results:   map[string]bool{"unusual-target": true},
+	}
+	cfg := defaultConfig()
+	cfg.AssertWait = true
+	cfg.AssertPollInterval = types.Duration{Duration: 10 * time.Millisecond}
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertSensorState, Target: "unusual-target", Condition: types.CondIsStale},
+	}, 5*time.Second)
+
+	eng := engine.New(cfg, transport, mutation.NewRegistry(), []scenario.Scenario{sc}, engine.WithAsserter(asserter))
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+
+	if len(results) != 1 {
+		t.Fatalf("got %d results, want 1", len(results))
+	}
+	if !results[0].Satisfied {
+		t.Error("expected Satisfied=true (no TargetValidator, unusual target accepted)")
+	}
+
+	// Evaluate must have been called.
+	asserter.mu.Lock()
+	evalCount := asserter.callCount
+	asserter.mu.Unlock()
+	if evalCount == 0 {
+		t.Error("Evaluate was not called — plain asserter should not run ValidateTarget")
+	}
+}
+
 func TestEvaluateAssertions_DataStateNative(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{

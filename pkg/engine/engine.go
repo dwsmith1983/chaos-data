@@ -249,6 +249,26 @@ func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Sc
 		return nil
 	}
 
+	// Pre-validate targets if the asserter supports it. A nil asserter
+	// (no WithAsserter option) yields ok=false from the type assertion.
+	if tv, ok := e.asserter.(adapter.TargetValidator); ok {
+		var validated []pendingAssertion
+		for _, p := range pending {
+			if e.asserter.Supports(p.assertion.Type) {
+				if err := tv.ValidateTarget(p.assertion); err != nil {
+					results[p.idx].Error = err.Error()
+					continue
+				}
+			}
+			validated = append(validated, p)
+		}
+		pending = validated
+	}
+
+	if len(pending) == 0 {
+		return results
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, maxWithin)
 	defer cancel()
 

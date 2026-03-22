@@ -21,3 +21,11 @@ type Asserter interface {
 	//   (false, err) — evaluation failed (engine logs, retries)
 	Evaluate(ctx context.Context, assertion types.Assertion) (bool, error)
 }
+
+// TargetValidator is an optional interface that Asserter implementations may
+// implement to validate assertion targets at load time. The engine calls
+// ValidateTarget before entering the poll loop, enabling fail-fast on
+// malformed targets instead of retrying until timeout.
+type TargetValidator interface {
+	ValidateTarget(assertion types.Assertion) error
+}

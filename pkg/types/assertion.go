@@ -2,7 +2,6 @@ package types
 
 import (
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -27,21 +26,6 @@ func (at AssertionType) IsValid() bool {
 	}
 }
 
-// targetSegments returns the expected number of "/" separated segments for
-// this type, or -1 if the type is unregistered.
-func (at AssertionType) targetSegments() int {
-	switch at {
-	case AssertSensorState, AssertEventEmitted:
-		return 2
-	case AssertTriggerState:
-		return 3
-	case AssertJobState, AssertDataState:
-		return 1
-	default:
-		return -1
-	}
-}
-
 // Condition is a named predicate from a fixed vocabulary.
 type Condition string
 
@@ -58,6 +42,7 @@ const (
 	CondStatusKilled  Condition = "status:killed"
 	CondStatusTimeout Condition = "status:timeout"
 	CondWasTriggered  Condition = "was_triggered"
+	CondStatusStopped Condition = "status:stopped"
 )
 
 // IsValid reports whether the condition is a known predicate.
@@ -65,7 +50,7 @@ func (c Condition) IsValid() bool {
 	switch c {
 	case CondIsStale, CondIsReady, CondIsPending, CondExists, CondNotExists,
 		CondIsHeld, CondStatusFailed, CondStatusRunning, CondStatusSuccess,
-		CondStatusKilled, CondStatusTimeout, CondWasTriggered:
+		CondStatusKilled, CondStatusTimeout, CondWasTriggered, CondStatusStopped:
 		return true
 	default:
 		return false
@@ -74,11 +59,21 @@ func (c Condition) IsValid() bool {
 
 // validConditions maps each assertion type to its allowed conditions.
 var validConditions = map[AssertionType]map[Condition]bool{
-	AssertSensorState:  {CondIsStale: true, CondIsReady: true, CondIsPending: true, CondExists: true},
-	AssertTriggerState: {CondStatusFailed: true, CondStatusSuccess: true, CondStatusKilled: true, CondStatusTimeout: true, CondWasTriggered: true},
+	AssertSensorState: {
+		CondIsStale: true, CondIsReady: true, CondIsPending: true, CondExists: true,
+		CondStatusRunning: true, CondStatusStopped: true,
+	},
+	AssertTriggerState: {
+		CondStatusFailed: true, CondStatusSuccess: true, CondStatusKilled: true,
+		CondStatusTimeout: true, CondWasTriggered: true,
+		CondStatusRunning: true, CondStatusStopped: true,
+	},
 	AssertEventEmitted: {CondExists: true},
-	AssertJobState:     {CondStatusFailed: true, CondStatusRunning: true, CondStatusSuccess: true},
-	AssertDataState:    {CondExists: true, CondNotExists: true, CondIsHeld: true},
+	AssertJobState: {
+		CondStatusFailed: true, CondStatusRunning: true, CondStatusSuccess: true,
+		CondStatusKilled: true, CondIsPending: true,
+	},
+	AssertDataState: {CondExists: true, CondNotExists: true, CondIsHeld: true},
 }
 
 // ValidFor reports whether condition c is valid for assertion type at.
@@ -110,15 +105,6 @@ func (a Assertion) Validate() error {
 	}
 	if a.Target == "" {
 		return fmt.Errorf("assertion target must not be empty")
-	}
-	expected := a.Type.targetSegments()
-	if expected < 0 {
-		return fmt.Errorf("no target segment rule for assertion type %q", a.Type)
-	}
-	got := strings.Count(a.Target, "/") + 1
-	if got != expected {
-		return fmt.Errorf("assertion type %q expects %d target segment(s), got %d in %q",
-			a.Type, expected, got, a.Target)
 	}
 	return nil
 }

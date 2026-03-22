@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -12,11 +13,13 @@ import (
 
 // Compile-time interface assertions.
 var (
-	_ adapter.DataTransport    = (*mockTransport)(nil)
-	_ adapter.EventEmitter     = (*mockEmitter)(nil)
-	_ adapter.SafetyController = (*mockSafety)(nil)
+	_ adapter.DataTransport      = (*mockTransport)(nil)
+	_ adapter.EventEmitter       = (*mockEmitter)(nil)
+	_ adapter.SafetyController   = (*mockSafety)(nil)
 	_ adapter.DependencyResolver = (*mockResolver)(nil)
 	_ adapter.Asserter           = (*mockAsserter)(nil)
+	_ adapter.Asserter           = (*mockValidatingAsserter)(nil)
+	_ adapter.TargetValidator    = (*mockValidatingAsserter)(nil)
 )
 
 // mockAsserter is a test double for adapter.Asserter.
@@ -37,6 +40,35 @@ func (m *mockAsserter) Evaluate(_ context.Context, a types.Assertion) (bool, err
 	result := m.results[a.Target]
 	m.mu.Unlock()
 	return result, nil
+}
+
+// mockValidatingAsserter implements both adapter.Asserter and adapter.TargetValidator.
+// It allows tests to control which targets are considered valid by ValidateTarget.
+type mockValidatingAsserter struct {
+	mockAsserter
+	// invalidTargets is the set of targets that ValidateTarget rejects.
+	invalidTargets map[string]bool
+	validateCalls  []types.Assertion
+	mu2            sync.Mutex
+}
+
+func (m *mockValidatingAsserter) ValidateTarget(a types.Assertion) error {
+	m.mu2.Lock()
+	m.validateCalls = append(m.validateCalls, a)
+	invalid := m.invalidTargets[a.Target]
+	m.mu2.Unlock()
+	if invalid {
+		return fmt.Errorf("invalid target %q for type %q", a.Target, a.Type)
+	}
+	return nil
+}
+
+func (m *mockValidatingAsserter) getValidateCalls() []types.Assertion {
+	m.mu2.Lock()
+	defer m.mu2.Unlock()
+	result := make([]types.Assertion, len(m.validateCalls))
+	copy(result, m.validateCalls)
+	return result
 }
 
 // mockResolver is a test double for adapter.DependencyResolver.

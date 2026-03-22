@@ -45,6 +45,26 @@ func (a *AdapterAsserter) Evaluate(ctx context.Context, assertion types.Assertio
 	}
 }
 
+// ValidateTarget validates the target format for supported assertion types.
+// Called by the engine at load time for fail-fast on malformed targets.
+func (a *AdapterAsserter) ValidateTarget(assertion types.Assertion) error {
+	switch assertion.Type {
+	case types.AssertSensorState:
+		if strings.Count(assertion.Target, "/") != 1 {
+			return fmt.Errorf("sensor_state target %q: expected pipeline/key", assertion.Target)
+		}
+	case types.AssertTriggerState:
+		if strings.Count(assertion.Target, "/") != 2 {
+			return fmt.Errorf("trigger_state target %q: expected pipeline/schedule/date", assertion.Target)
+		}
+	case types.AssertEventEmitted:
+		if strings.Count(assertion.Target, "/") != 1 {
+			return fmt.Errorf("event_emitted target %q: expected scenario/mutation", assertion.Target)
+		}
+	}
+	return nil
+}
+
 func (a *AdapterAsserter) evalSensor(ctx context.Context, assertion types.Assertion) (bool, error) {
 	parts := strings.SplitN(assertion.Target, "/", 2)
 	if len(parts) != 2 {

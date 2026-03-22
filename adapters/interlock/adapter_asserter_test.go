@@ -10,8 +10,11 @@ import (
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
-// compile-time interface check
-var _ adapter.Asserter = (*interlock.AdapterAsserter)(nil)
+// compile-time interface checks
+var (
+	_ adapter.Asserter        = (*interlock.AdapterAsserter)(nil)
+	_ adapter.TargetValidator = (*interlock.AdapterAsserter)(nil)
+)
 
 func TestAdapterAsserter_Supports(t *testing.T) {
 	t.Parallel()
@@ -333,5 +336,93 @@ func TestAdapterAsserter_UnsupportedType(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for unsupported type")
+	}
+}
+
+// --- ValidateTarget tests ---
+
+func TestAdapterAsserter_ValidateTarget(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	reader := newMockEventReader()
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	tests := []struct {
+		name    string
+		a       types.Assertion
+		wantErr bool
+	}{
+		// sensor_state: expects 2 segments (pipeline/key)
+		{
+			name:    "sensor_state valid 2 segments",
+			a:       types.Assertion{Type: types.AssertSensorState, Target: "pipeline/key"},
+			wantErr: false,
+		},
+		{
+			name:    "sensor_state invalid 1 segment",
+			a:       types.Assertion{Type: types.AssertSensorState, Target: "no-slash"},
+			wantErr: true,
+		},
+		// trigger_state: expects 3 segments (pipeline/schedule/date)
+		{
+			name:    "trigger_state valid 3 segments",
+			a:       types.Assertion{Type: types.AssertTriggerState, Target: "pipeline/schedule/date"},
+			wantErr: false,
+		},
+		{
+			name:    "trigger_state invalid 2 segments",
+			a:       types.Assertion{Type: types.AssertTriggerState, Target: "only/two"},
+			wantErr: true,
+		},
+		// event_emitted: expects 2 segments (scenario/mutation)
+		{
+			name:    "event_emitted valid 2 segments",
+			a:       types.Assertion{Type: types.AssertEventEmitted, Target: "scenario/mutation"},
+			wantErr: false,
+		},
+		{
+			name:    "event_emitted invalid 1 segment",
+			a:       types.Assertion{Type: types.AssertEventEmitted, Target: "no-slash"},
+			wantErr: true,
+		},
+		// over-segmented targets must be rejected
+		{
+			name:    "sensor_state invalid 3 segments",
+			a:       types.Assertion{Type: types.AssertSensorState, Target: "a/b/c"},
+			wantErr: true,
+		},
+		{
+			name:    "trigger_state invalid 4 segments",
+			a:       types.Assertion{Type: types.AssertTriggerState, Target: "a/b/c/d"},
+			wantErr: true,
+		},
+		{
+			name:    "event_emitted invalid 3 segments",
+			a:       types.Assertion{Type: types.AssertEventEmitted, Target: "a/b/c"},
+			wantErr: true,
+		},
+		// unsupported types: ValidateTarget should return nil (not our concern)
+		{
+			name:    "job_state not validated by interlock",
+			a:       types.Assertion{Type: types.AssertJobState, Target: "job-1"},
+			wantErr: false,
+		},
+		{
+			name:    "data_state not validated by interlock",
+			a:       types.Assertion{Type: types.AssertDataState, Target: "file.jsonl"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := aa.ValidateTarget(tt.a)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateTarget(%q/%q) error = %v, wantErr %v",
+					tt.a.Type, tt.a.Target, err, tt.wantErr)
+			}
+		})
 	}
 }

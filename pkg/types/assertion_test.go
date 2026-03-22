@@ -43,6 +43,7 @@ func TestCondition_IsValid(t *testing.T) {
 		{"status:killed", CondStatusKilled, true},
 		{"status:timeout", CondStatusTimeout, true},
 		{"was_triggered", CondWasTriggered, true},
+		{"status:stopped", CondStatusStopped, true}, // NEW: Dagster sensor/schedule stopped state
 		{"unknown", Condition("bogus"), false},
 		{"empty", Condition(""), false},
 	}
@@ -74,9 +75,18 @@ func TestCondition_ValidFor(t *testing.T) {
 		{CondStatusFailed, AssertJobState, true},
 		{CondStatusFailed, AssertSensorState, false},
 		{CondStatusRunning, AssertJobState, true},
-		{CondStatusRunning, AssertTriggerState, false},
+		// NEW: status:running is now also valid for sensor_state and trigger_state
+		{CondStatusRunning, AssertSensorState, true},
+		{CondStatusRunning, AssertTriggerState, true},
 		{CondWasTriggered, AssertTriggerState, true},
 		{CondWasTriggered, AssertSensorState, false},
+		// NEW: status:stopped valid for sensor_state and trigger_state, not job_state
+		{CondStatusStopped, AssertSensorState, true},
+		{CondStatusStopped, AssertTriggerState, true},
+		{CondStatusStopped, AssertJobState, false},
+		// NEW: is_pending and status:killed now valid for job_state
+		{CondIsPending, AssertJobState, true},
+		{CondStatusKilled, AssertJobState, true},
 	}
 	for _, tt := range tests {
 		name := string(tt.cond) + "/" + string(tt.atype)
@@ -103,9 +113,14 @@ func TestAssertion_Validate(t *testing.T) {
 		{"unknown type", Assertion{AssertionType("nope"), "x", CondExists}, true},
 		{"unknown condition", Assertion{AssertSensorState, "p/k", Condition("nope")}, true},
 		{"condition invalid for type", Assertion{AssertDataState, "f", CondIsStale}, true},
-		{"sensor wrong segments", Assertion{AssertSensorState, "only-one", CondIsStale}, true},
-		{"trigger wrong segments", Assertion{AssertTriggerState, "only/two", CondStatusFailed}, true},
 		{"empty target", Assertion{AssertSensorState, "", CondIsStale}, true},
+		// NEW: Validate() no longer rejects based on segment count — routing is
+		// delegated to adapter ValidateTarget. These previously-failing cases
+		// must now PASS validation.
+		{"sensor 1-segment target passes validate", Assertion{AssertSensorState, "only-one", CondIsStale}, false},
+		{"sensor 3-segment target passes validate", Assertion{AssertSensorState, "a/b/c", CondIsStale}, false},
+		{"trigger 2-segment target passes validate", Assertion{AssertTriggerState, "only/two", CondStatusFailed}, false},
+		{"trigger 1-segment target passes validate", Assertion{AssertTriggerState, "just-one", CondStatusFailed}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
