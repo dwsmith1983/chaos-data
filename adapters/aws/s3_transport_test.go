@@ -1,6 +1,7 @@
 package aws_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -863,5 +864,139 @@ func TestS3Transport_Release_CopyFails(t *testing.T) {
 	}
 	if deleteCallCount != 0 {
 		t.Errorf("DeleteObject called %d times, want 0 (held object should not be deleted on copy failure)", deleteCallCount)
+	}
+}
+
+// --- HoldData tests ---
+
+func TestS3Transport_HoldData_Happy(t *testing.T) {
+	t.Parallel()
+
+	until := time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)
+	var putCalls []s3.PutObjectInput
+	var putBodies [][]byte
+
+	mock := &mockS3API{
+		PutObjectFn: func(_ context.Context, params *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+			// Capture the body before it is consumed.
+			var body []byte
+			if params.Body != nil {
+				body, _ = io.ReadAll(params.Body)
+			}
+			putBodies = append(putBodies, body)
+			putCalls = append(putCalls, *params)
+			return &s3.PutObjectOutput{}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	data := bytes.NewReader([]byte("held payload"))
+	err := tr.HoldData(context.Background(), "data/file.csv", data, until)
+	if err != nil {
+		t.Fatalf("HoldData() error = %v, want nil", err)
+	}
+
+	// Expect exactly 2 PutObject calls: data object + .meta sidecar.
+	if len(putCalls) != 2 {
+		t.Fatalf("PutObject called %d times, want 2", len(putCalls))
+	}
+
+	// First call: data object at {holdPrefix}{key} in pipeline-bucket.
+	dataPut := putCalls[0]
+	if aws.ToString(dataPut.Bucket) != "pipeline-bucket" {
+		t.Errorf("data PutObject bucket = %q, want %q", aws.ToString(dataPut.Bucket), "pipeline-bucket")
+	}
+	wantDataKey := "chaos-hold/data/file.csv"
+	if aws.ToString(dataPut.Key) != wantDataKey {
+		t.Errorf("data PutObject key = %q, want %q", aws.ToString(dataPut.Key), wantDataKey)
+	}
+	if string(putBodies[0]) != "held payload" {
+		t.Errorf("data PutObject body = %q, want %q", string(putBodies[0]), "held payload")
+	}
+
+	// Second call: .meta sidecar at {holdPrefix}{key}.meta in pipeline-bucket.
+	metaPut := putCalls[1]
+	if aws.ToString(metaPut.Bucket) != "pipeline-bucket" {
+		t.Errorf("meta PutObject bucket = %q, want %q", aws.ToString(metaPut.Bucket), "pipeline-bucket")
+	}
+	wantMetaKey := "chaos-hold/data/file.csv.meta"
+	if aws.ToString(metaPut.Key) != wantMetaKey {
+		t.Errorf("meta PutObject key = %q, want %q", aws.ToString(metaPut.Key), wantMetaKey)
+	}
+
+	// Verify .meta content is valid JSON with correct fields.
+	var meta struct {
+		ReleaseAt   string `json:"release_at"`
+		OriginalKey string `json:"original_key"`
+	}
+	if err := json.Unmarshal(putBodies[1], &meta); err != nil {
+		t.Fatalf("unmarshal .meta body: %v", err)
+	}
+	if meta.OriginalKey != "data/file.csv" {
+		t.Errorf("meta.original_key = %q, want %q", meta.OriginalKey, "data/file.csv")
+	}
+	parsedTime, err := time.Parse(time.RFC3339, meta.ReleaseAt)
+	if err != nil {
+		t.Fatalf("parse release_at %q: %v", meta.ReleaseAt, err)
+	}
+	if !parsedTime.Equal(until) {
+		t.Errorf("meta.release_at = %v, want %v", parsedTime, until)
+	}
+}
+
+func TestS3Transport_HoldData_DataWriteFails(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockS3API{
+		PutObjectFn: func(_ context.Context, _ *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+			return nil, errors.New("put data failed")
+		},
+	}
+
+	tr := newTestTransport(mock)
+	err := tr.HoldData(context.Background(), "data/file.csv", strings.NewReader("payload"), time.Now().Add(time.Hour))
+	if err == nil {
+		t.Fatal("HoldData() error = nil, want error when data write fails")
+	}
+}
+
+func TestS3Transport_HoldData_SidecarWriteFails_CleansUpData(t *testing.T) {
+	t.Parallel()
+
+	putCallCount := 0
+	var deleteCalls []s3.DeleteObjectInput
+
+	mock := &mockS3API{
+		PutObjectFn: func(_ context.Context, params *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+			putCallCount++
+			// First call (data object) succeeds; second call (.meta sidecar) fails.
+			if putCallCount == 1 {
+				return &s3.PutObjectOutput{}, nil
+			}
+			return nil, errors.New("meta write failed")
+		},
+		DeleteObjectFn: func(_ context.Context, params *s3.DeleteObjectInput, _ ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
+			deleteCalls = append(deleteCalls, *params)
+			return &s3.DeleteObjectOutput{}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	err := tr.HoldData(context.Background(), "data/file.csv", strings.NewReader("payload"), time.Now().Add(time.Hour))
+	if err == nil {
+		t.Fatal("HoldData() error = nil, want error when sidecar write fails")
+	}
+
+	// The data object should have been cleaned up via DeleteObject.
+	if len(deleteCalls) != 1 {
+		t.Fatalf("DeleteObject called %d times, want 1 (cleanup data object)", len(deleteCalls))
+	}
+	del := deleteCalls[0]
+	if aws.ToString(del.Bucket) != "pipeline-bucket" {
+		t.Errorf("cleanup DeleteObject bucket = %q, want %q", aws.ToString(del.Bucket), "pipeline-bucket")
+	}
+	wantDataKey := "chaos-hold/data/file.csv"
+	if aws.ToString(del.Key) != wantDataKey {
+		t.Errorf("cleanup DeleteObject key = %q, want %q", aws.ToString(del.Key), wantDataKey)
 	}
 }

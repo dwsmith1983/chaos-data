@@ -240,9 +240,55 @@ func (t *S3Transport) ListHeld(ctx context.Context) ([]types.HeldObject, error) 
 	return objects, nil
 }
 
-// HoldData is not supported by S3Transport. Use Write followed by Hold instead.
-func (t *S3Transport) HoldData(_ context.Context, _ string, _ io.Reader, _ time.Time) error {
-	return fmt.Errorf("HoldData not supported for S3Transport")
+// HoldData writes data directly into the pipeline bucket under the hold
+// prefix and creates a .meta sidecar with release metadata. This is a
+// single-step hold that does not require a prior Write + Hold sequence.
+//
+// If the sidecar write fails, the data object is cleaned up so that no
+// orphaned objects remain under the hold prefix.
+func (t *S3Transport) HoldData(ctx context.Context, key string, data io.Reader, until time.Time) error {
+	holdKey := t.holdPrefix + key
+	metaKey := holdKey + ".meta"
+
+	// Step 1: Write data object to pipeline bucket under hold prefix.
+	_, err := t.api.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(t.pipelineBucket),
+		Key:    aws.String(holdKey),
+		Body:   data,
+	})
+	if err != nil {
+		return fmt.Errorf("hold data write %s: %w", key, err)
+	}
+
+	// Step 2: Write .meta sidecar with release metadata.
+	meta := holdMeta{
+		ReleaseAt:   until.UTC().Format(time.RFC3339),
+		OriginalKey: key,
+	}
+	metaBytes, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("marshal hold metadata for %s: %w", key, err)
+	}
+
+	_, err = t.api.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(t.pipelineBucket),
+		Key:    aws.String(metaKey),
+		Body:   bytes.NewReader(metaBytes),
+	})
+	if err != nil {
+		// Clean up the data object on sidecar write failure.
+		_, cleanupErr := t.api.DeleteObject(ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(t.pipelineBucket),
+			Key:    aws.String(holdKey),
+		})
+		holdErr := fmt.Errorf("write hold metadata for %s: %w", key, err)
+		if cleanupErr != nil {
+			return fmt.Errorf("%w; additionally failed to clean up data object: %v", holdErr, cleanupErr)
+		}
+		return holdErr
+	}
+
+	return nil
 }
 
 // ReleaseAll immediately releases all currently held objects. It calls
