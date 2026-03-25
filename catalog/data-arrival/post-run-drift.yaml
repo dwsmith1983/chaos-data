@@ -1,0 +1,30 @@
+name: post-run-drift
+description: >-
+  Split data by partition key, deliver the main batch immediately,
+  and hold back a percentage as "late-arriving" records that drift
+  in after the pipeline has already processed the initial batch.
+category: data-arrival
+severity: moderate
+version: 1
+
+target:
+  layer: data
+  transport: ""
+  filter:
+    prefix: ""
+    match: ""
+
+mutation:
+  type: post-run-drift
+  params:
+    partition_key: "par_day"
+    partition_value: ""
+    drift_delay: "5m"
+    late_pct: "40"
+
+probability: 0.3
+
+safety:
+  max_affected_pct: 50
+  cooldown: 10m
+  sla_aware: true
