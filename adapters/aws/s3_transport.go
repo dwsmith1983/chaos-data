@@ -201,6 +201,9 @@ func (t *S3Transport) ListHeld(ctx context.Context) ([]types.HeldObject, error) 
 	var objects []types.HeldObject
 	var continuationToken *string
 
+	var dataKeys = make(map[string]*types.DataObject)
+	var metaKeys = make(map[string]bool)
+
 	for {
 		input := &s3.ListObjectsV2Input{
 			Bucket:            aws.String(t.pipelineBucket),
@@ -216,18 +219,18 @@ func (t *S3Transport) ListHeld(ctx context.Context) ([]types.HeldObject, error) 
 		for _, obj := range out.Contents {
 			key := aws.ToString(obj.Key)
 			if strings.HasSuffix(key, ".meta") {
+				metaKeys[key] = true
 				continue
 			}
 			relativeKey := strings.TrimPrefix(key, t.holdPrefix)
-			do := types.DataObject{
-				Key: relativeKey,
-			}
+			do := types.DataObject{Key: relativeKey}
 			if obj.Size != nil {
 				do.Size = *obj.Size
 			}
 			if obj.LastModified != nil {
 				do.LastModified = *obj.LastModified
 			}
+			dataKeys[key] = &do
 			objects = append(objects, types.HeldObject{DataObject: do})
 		}
 
@@ -235,6 +238,20 @@ func (t *S3Transport) ListHeld(ctx context.Context) ([]types.HeldObject, error) 
 			break
 		}
 		continuationToken = out.NextContinuationToken
+	}
+
+	// Add orphaned sidecars (meta without data)
+	for metaKey := range metaKeys {
+		dataKey := strings.TrimSuffix(metaKey, ".meta")
+		if _, ok := dataKeys[dataKey]; !ok {
+			relativeKey := strings.TrimPrefix(dataKey, t.holdPrefix)
+			objects = append(objects, types.HeldObject{
+				DataObject: types.DataObject{
+					Key:  relativeKey,
+					Size: 0, // signals orphaned sidecar
+				},
+			})
+		}
 	}
 
 	// Populate HeldUntil from .meta sidecars.
@@ -372,23 +389,25 @@ func (t *S3Transport) Release(ctx context.Context, key string) error {
 		return fmt.Errorf("release copy %s to %s: %w", holdKey, destKey, err)
 	}
 
-	// Step 3: Delete .meta sidecar first, then held object.
-	// Ordering: .meta first so that if a crash occurs between deletes,
-	// the held object still exists and re-running Release will succeed.
-	_, err = t.api.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(t.pipelineBucket),
-		Key:    aws.String(metaKey),
-	})
-	if err != nil {
-		return fmt.Errorf("delete hold metadata %s: %w", metaKey, err)
-	}
-
+	// Step 3: Delete held object first, then .meta sidecar.
+	// Ordering: data object first so that if a crash occurs between deletes,
+	// an orphaned .meta sidecar is left behind. ListHeld will return it as a
+	// Size=0 object, causing watch.go's orphaned sidecar protection to clean
+	// it up automatically.
 	_, err = t.api.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(t.pipelineBucket),
 		Key:    aws.String(holdKey),
 	})
 	if err != nil {
 		return fmt.Errorf("delete held object %s: %w", holdKey, err)
+	}
+
+	_, err = t.api.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(t.pipelineBucket),
+		Key:    aws.String(metaKey),
+	})
+	if err != nil {
+		return fmt.Errorf("delete hold metadata %s: %w", metaKey, err)
 	}
 
 	return nil

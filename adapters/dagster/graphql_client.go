@@ -286,6 +286,9 @@ func (g *graphqlClient) GetRun(ctx context.Context, jobName string) (RunState, e
 	}
 
 	node := resp.Data.RunsOrError
+	if node.Typename != "Runs" {
+		return RunState{}, fmt.Errorf("dagster: unexpected runsOrError type %q", node.Typename)
+	}
 	if len(node.Results) == 0 {
 		return RunState{}, ErrDagsterNotFound
 	}

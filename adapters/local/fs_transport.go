@@ -202,10 +202,30 @@ func (t *FSTransport) ListHeld(_ context.Context) ([]types.HeldObject, error) {
 			return nil
 		}
 		if strings.HasSuffix(d.Name(), ".meta") {
+			dataPath := strings.TrimSuffix(p, ".meta")
+			if _, statErr := os.Stat(dataPath); os.IsNotExist(statErr) {
+				rel, err := filepath.Rel(t.holdDir, dataPath)
+				if err == nil {
+					obj := types.HeldObject{
+						DataObject: types.DataObject{
+							Key:  rel,
+							Size: 0, // signals orphaned sidecar
+						},
+					}
+					if metaBytes, readErr := os.ReadFile(p); readErr == nil {
+						var meta holdMeta
+						if json.Unmarshal(metaBytes, &meta) == nil {
+							obj.HeldUntil = meta.ReleaseAt
+						}
+					}
+					objects = append(objects, obj)
+				}
+			}
 			return nil
 		}
 
 		info, err := d.Info()
+
 		if err != nil {
 			return fmt.Errorf("stat held %s: %w", d.Name(), err)
 		}
