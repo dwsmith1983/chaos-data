@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -163,5 +164,160 @@ func TestWatchCmd_EmptyHoldDir(t *testing.T) {
 	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("watch with empty hold dir should not error: %v", err)
+	}
+}
+
+func TestWatchCmd_EmitterStdout_EmitsEvent(t *testing.T) {
+	t.Parallel()
+
+	staging := t.TempDir()
+	output := t.TempDir()
+	holdDir := filepath.Join(staging, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(holdDir, "emit.jsonl"), []byte(`{"id":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta := struct {
+		ReleaseAt time.Time `json:"release_at"`
+	}{ReleaseAt: time.Now().Add(-time.Minute)}
+	metaBytes, _ := json.Marshal(meta)
+	if err := os.WriteFile(filepath.Join(holdDir, "emit.jsonl.meta"), metaBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	cmd := rootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"watch",
+		"--input", staging,
+		"--output", output,
+		"--poll-interval", "50ms",
+		"--emitter", "stdout",
+	})
+	cmd.SetContext(ctx)
+	_ = cmd.Execute()
+
+	got := buf.String()
+	if !strings.Contains(got, "object-released") {
+		t.Errorf("expected stdout emitter output to contain 'object-released', got:\n%s", got)
+	}
+}
+
+func TestWatchCmd_EmitterNone_NoEvents(t *testing.T) {
+	t.Parallel()
+
+	staging := t.TempDir()
+	output := t.TempDir()
+	holdDir := filepath.Join(staging, ".chaos-hold")
+	if err := os.MkdirAll(holdDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(filepath.Join(holdDir, "noemit.jsonl"), []byte(`{"id":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	meta := struct {
+		ReleaseAt time.Time `json:"release_at"`
+	}{ReleaseAt: time.Now().Add(-time.Minute)}
+	metaBytes, _ := json.Marshal(meta)
+	if err := os.WriteFile(filepath.Join(holdDir, "noemit.jsonl.meta"), metaBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	cmd := rootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"watch",
+		"--input", staging,
+		"--output", output,
+		"--poll-interval", "50ms",
+		"--emitter", "none",
+	})
+	cmd.SetContext(ctx)
+	_ = cmd.Execute()
+
+	got := buf.String()
+	if strings.Contains(got, "object-released") {
+		t.Errorf("expected no event emission with --emitter=none, but got:\n%s", got)
+	}
+	if !strings.Contains(got, "released") {
+		t.Errorf("expected human-readable release log line, got:\n%s", got)
+	}
+}
+
+func TestWatchCmd_EmitterEventBridge_NoRegion_Fails(t *testing.T) {
+	t.Parallel()
+
+	staging := t.TempDir()
+	output := t.TempDir()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	cmd := rootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"watch",
+		"--input", staging,
+		"--output", output,
+		"--poll-interval", "50ms",
+		"--emitter", "eventbridge",
+	})
+	cmd.SetContext(ctx)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when --emitter=eventbridge without --region")
+	}
+	if !strings.Contains(err.Error(), "region") {
+		t.Errorf("expected error to mention 'region', got: %v", err)
+	}
+}
+
+func TestWatchCmd_EmitterUnknown_Fails(t *testing.T) {
+	t.Parallel()
+
+	staging := t.TempDir()
+	output := t.TempDir()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	cmd := rootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"watch",
+		"--input", staging,
+		"--output", output,
+		"--poll-interval", "50ms",
+		"--emitter", "kafka",
+	})
+	cmd.SetContext(ctx)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for unknown emitter 'kafka'")
+	}
+	if !strings.Contains(err.Error(), "kafka") {
+		t.Errorf("expected error to mention 'kafka', got: %v", err)
 	}
 }
