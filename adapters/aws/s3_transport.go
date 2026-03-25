@@ -237,6 +237,29 @@ func (t *S3Transport) ListHeld(ctx context.Context) ([]types.HeldObject, error) 
 		continuationToken = out.NextContinuationToken
 	}
 
+	// Populate HeldUntil from .meta sidecars.
+	for i, obj := range objects {
+		metaKey := t.holdPrefix + obj.Key + ".meta"
+		out, err := t.api.GetObject(ctx, &s3.GetObjectInput{
+			Bucket: aws.String(t.pipelineBucket),
+			Key:    aws.String(metaKey),
+		})
+		if err != nil || out.Body == nil {
+			continue
+		}
+		var meta holdMeta
+		decErr := json.NewDecoder(out.Body).Decode(&meta)
+		out.Body.Close()
+		if decErr != nil {
+			continue
+		}
+		parsed, parseErr := time.Parse(time.RFC3339, meta.ReleaseAt)
+		if parseErr != nil {
+			continue
+		}
+		objects[i].HeldUntil = parsed
+	}
+
 	return objects, nil
 }
 

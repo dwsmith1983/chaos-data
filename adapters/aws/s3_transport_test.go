@@ -1000,3 +1000,145 @@ func TestS3Transport_HoldData_SidecarWriteFails_CleansUpData(t *testing.T) {
 		t.Errorf("cleanup DeleteObject key = %q, want %q", aws.ToString(del.Key), wantDataKey)
 	}
 }
+
+// --- ListHeld HeldUntil population tests ---
+
+func TestS3Transport_ListHeld_PopulatesHeldUntil(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	releaseAt := time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)
+
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{
+				Contents: []s3types.Object{
+					{Key: aws.String("chaos-hold/data/file.csv"), Size: aws.Int64(100), LastModified: &now},
+					{Key: aws.String("chaos-hold/data/file.csv.meta"), Size: aws.Int64(50), LastModified: &now},
+				},
+			}, nil
+		},
+		GetObjectFn: func(_ context.Context, params *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+			wantKey := "chaos-hold/data/file.csv.meta"
+			if aws.ToString(params.Key) != wantKey {
+				t.Errorf("GetObject key = %q, want %q", aws.ToString(params.Key), wantKey)
+			}
+			if aws.ToString(params.Bucket) != "pipeline-bucket" {
+				t.Errorf("GetObject bucket = %q, want %q", aws.ToString(params.Bucket), "pipeline-bucket")
+			}
+			meta := `{"release_at":"2025-07-01T00:00:00Z","original_key":"data/file.csv"}`
+			return &s3.GetObjectOutput{
+				Body: io.NopCloser(strings.NewReader(meta)),
+			}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v, want nil", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(objs))
+	}
+	if !objs[0].HeldUntil.Equal(releaseAt) {
+		t.Errorf("objs[0].HeldUntil = %v, want %v", objs[0].HeldUntil, releaseAt)
+	}
+}
+
+func TestS3Transport_ListHeld_MissingSidecar_ZeroHeldUntil(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{
+				Contents: []s3types.Object{
+					{Key: aws.String("chaos-hold/data/file.csv"), Size: aws.Int64(100), LastModified: &now},
+				},
+			}, nil
+		},
+		GetObjectFn: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+			return nil, errors.New("NoSuchKey: no such key")
+		},
+	}
+
+	tr := newTestTransport(mock)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v, want nil", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(objs))
+	}
+	if !objs[0].HeldUntil.IsZero() {
+		t.Errorf("objs[0].HeldUntil = %v, want zero time", objs[0].HeldUntil)
+	}
+}
+
+func TestS3Transport_ListHeld_BadJSON_ZeroHeldUntil(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{
+				Contents: []s3types.Object{
+					{Key: aws.String("chaos-hold/data/file.csv"), Size: aws.Int64(100), LastModified: &now},
+					{Key: aws.String("chaos-hold/data/file.csv.meta"), Size: aws.Int64(10), LastModified: &now},
+				},
+			}, nil
+		},
+		GetObjectFn: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+			return &s3.GetObjectOutput{
+				Body: io.NopCloser(strings.NewReader("not json")),
+			}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v, want nil", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(objs))
+	}
+	if !objs[0].HeldUntil.IsZero() {
+		t.Errorf("objs[0].HeldUntil = %v, want zero time", objs[0].HeldUntil)
+	}
+}
+
+func TestS3Transport_ListHeld_BadTimestamp_ZeroHeldUntil(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	mock := &mockS3API{
+		ListObjectsV2Fn: func(_ context.Context, _ *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+			return &s3.ListObjectsV2Output{
+				Contents: []s3types.Object{
+					{Key: aws.String("chaos-hold/data/file.csv"), Size: aws.Int64(100), LastModified: &now},
+					{Key: aws.String("chaos-hold/data/file.csv.meta"), Size: aws.Int64(50), LastModified: &now},
+				},
+			}, nil
+		},
+		GetObjectFn: func(_ context.Context, _ *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+			meta := `{"release_at":"not-a-date","original_key":"data/file.csv"}`
+			return &s3.GetObjectOutput{
+				Body: io.NopCloser(strings.NewReader(meta)),
+			}, nil
+		},
+	}
+
+	tr := newTestTransport(mock)
+	objs, err := tr.ListHeld(context.Background())
+	if err != nil {
+		t.Fatalf("ListHeld() error = %v, want nil", err)
+	}
+	if len(objs) != 1 {
+		t.Fatalf("ListHeld() returned %d objects, want 1", len(objs))
+	}
+	if !objs[0].HeldUntil.IsZero() {
+		t.Errorf("objs[0].HeldUntil = %v, want zero time", objs[0].HeldUntil)
+	}
+}
