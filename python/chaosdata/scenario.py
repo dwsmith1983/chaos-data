@@ -148,10 +148,300 @@ class Empty:
         return {"preserve_header": str(self.preserve_header).lower()}
 
 
+@dataclass(frozen=True)
+class CascadeDelay:
+    """Parameters for the cascade-delay mutation: simulates cascading upstream delay."""
+
+    upstream_pipeline: str = ""
+    delay_duration: str = ""
+    sensor_key: str = "arrival"
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "upstream_pipeline": self.upstream_pipeline,
+            "delay_duration": self.delay_duration,
+            "sensor_key": self.sensor_key,
+        }
+
+
+@dataclass(frozen=True)
+class OutOfOrder:
+    """Parameters for the out-of-order mutation: delivers data in wrong partition order."""
+
+    delay_older_by: str = ""
+    partition_field: str = ""
+    older_value: str = ""
+    newer_value: str = ""
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "delay_older_by": self.delay_older_by,
+            "partition_field": self.partition_field,
+            "older_value": self.older_value,
+            "newer_value": self.newer_value,
+        }
+
+
+@dataclass(frozen=True)
+class StreamingLag:
+    """Parameters for the streaming-lag mutation: simulates consumer group lag."""
+
+    lag_duration: str = ""
+    consumer_group: str = ""
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "lag_duration": self.lag_duration,
+            "consumer_group": self.consumer_group,
+        }
+
+
+@dataclass(frozen=True)
+class PostRunDrift:
+    """Parameters for the post-run-drift mutation: late-arriving partition data."""
+
+    partition_key: str = ""
+    partition_value: str = ""
+    drift_delay: str = ""
+    late_pct: int = 20
+
+    def __post_init__(self) -> None:
+        if self.late_pct < 1 or self.late_pct > 100:
+            raise ValueError(
+                f"late_pct must be 1-100, got {self.late_pct}"
+            )
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "partition_key": self.partition_key,
+            "partition_value": self.partition_value,
+            "drift_delay": self.drift_delay,
+            "late_pct": str(self.late_pct),
+        }
+
+
+@dataclass(frozen=True)
+class SlowWrite:
+    """Parameters for the slow-write mutation: adds latency to write operations."""
+
+    latency: str = ""
+    jitter: str = ""
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "latency": self.latency,
+            "jitter": self.jitter,
+        }
+
+
+@dataclass(frozen=True)
+class RollingDegradation:
+    """Parameters for the rolling-degradation mutation: gradual quality degradation."""
+
+    start_pct: int = 0
+    end_pct: int = 100
+    ramp_duration: str = ""
+
+    def __post_init__(self) -> None:
+        if self.start_pct < 0 or self.start_pct > 100:
+            raise ValueError(
+                f"start_pct must be 0-100, got {self.start_pct}"
+            )
+        if self.end_pct < 0 or self.end_pct > 100:
+            raise ValueError(
+                f"end_pct must be 0-100, got {self.end_pct}"
+            )
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "start_pct": str(self.start_pct),
+            "end_pct": str(self.end_pct),
+            "ramp_duration": self.ramp_duration,
+        }
+
+
+@dataclass(frozen=True)
+class StaleSensor:
+    """Parameters for the stale-sensor mutation: marks a sensor as stale."""
+
+    sensor_key: str = ""
+    pipeline: str = ""
+    last_update_age: str = ""
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "sensor_key": self.sensor_key,
+            "pipeline": self.pipeline,
+            "last_update_age": self.last_update_age,
+        }
+
+
+@dataclass(frozen=True)
+class PhantomSensor:
+    """Parameters for the phantom-sensor mutation: writes a fake sensor record."""
+
+    pipeline: str = ""
+    sensor_key: str = ""
+    status: str = "ready"
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "pipeline": self.pipeline,
+            "sensor_key": self.sensor_key,
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True)
+class SensorFlapping:
+    """Parameters for the sensor-flapping mutation: rapidly alternates sensor status."""
+
+    sensor_key: str = ""
+    pipeline: str = ""
+    flap_count: int = 5
+    start_status: str = "ready"
+    alternate_status: str = "pending"
+
+    def __post_init__(self) -> None:
+        if self.flap_count < 1:
+            raise ValueError(
+                f"flap_count must be >= 1, got {self.flap_count}"
+            )
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "sensor_key": self.sensor_key,
+            "pipeline": self.pipeline,
+            "flap_count": str(self.flap_count),
+            "start_status": self.start_status,
+            "alternate_status": self.alternate_status,
+        }
+
+
+@dataclass(frozen=True)
+class SplitSensor:
+    """Parameters for the split-sensor mutation: writes conflicting sensor values."""
+
+    sensor_key: str = ""
+    pipeline: str = ""
+    conflicting_values: str = "ready,stale"
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "sensor_key": self.sensor_key,
+            "pipeline": self.pipeline,
+            "conflicting_values": self.conflicting_values,
+        }
+
+
+@dataclass(frozen=True)
+class TimestampForgery:
+    """Parameters for the timestamp-forgery mutation: falsifies sensor timestamps."""
+
+    sensor_key: str = ""
+    pipeline: str = ""
+    last_updated_offset: str = ""
+    payload_timestamp_offset: str = ""
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "sensor_key": self.sensor_key,
+            "pipeline": self.pipeline,
+            "last_updated_offset": self.last_updated_offset,
+            "payload_timestamp_offset": self.payload_timestamp_offset,
+        }
+
+
+@dataclass(frozen=True)
+class FalseSuccess:
+    """Parameters for the false-success mutation: reports success for failed jobs."""
+
+    pipeline: str = ""
+    schedule: str = ""
+    date: str = ""
+    job_type: str = "glue"
+    missing_output: str = ""
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "pipeline": self.pipeline,
+            "schedule": self.schedule,
+            "date": self.date,
+            "job_type": self.job_type,
+            "missing_output": self.missing_output,
+        }
+
+
+@dataclass(frozen=True)
+class JobKill:
+    """Parameters for the job-kill mutation: terminates a pipeline job mid-execution."""
+
+    pipeline: str = ""
+    schedule: str = ""
+    date: str = ""
+    kill_after_pct: int = 50
+    job_type: str = "glue"
+
+    def __post_init__(self) -> None:
+        if self.kill_after_pct < 0 or self.kill_after_pct > 100:
+            raise ValueError(
+                f"kill_after_pct must be 0-100, got {self.kill_after_pct}"
+            )
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "pipeline": self.pipeline,
+            "schedule": self.schedule,
+            "date": self.date,
+            "kill_after_pct": str(self.kill_after_pct),
+            "job_type": self.job_type,
+        }
+
+
+@dataclass(frozen=True)
+class PhantomTrigger:
+    """Parameters for the phantom-trigger mutation: creates a fake trigger record."""
+
+    pipeline: str = ""
+    schedule: str = ""
+    date: str = ""
+    trigger_type: str = "scheduled"
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "pipeline": self.pipeline,
+            "schedule": self.schedule,
+            "date": self.date,
+            "trigger_type": self.trigger_type,
+        }
+
+
+@dataclass(frozen=True)
+class TriggerTimeout:
+    """Parameters for the trigger-timeout mutation: simulates a trigger that times out."""
+
+    pipeline: str = ""
+    schedule: str = ""
+    date: str = ""
+    timeout_duration: str = "30m"
+
+    def to_params(self) -> dict[str, str]:
+        return {
+            "pipeline": self.pipeline,
+            "schedule": self.schedule,
+            "date": self.date,
+            "timeout_duration": self.timeout_duration,
+        }
+
+
 # Union of all mutation parameter types.
 MutationType: TypeAlias = (
     Delay | Corrupt | Drop | Duplicate | SchemaDrift
     | StaleReplay | MultiDay | Partial | Empty
+    | CascadeDelay | OutOfOrder | StreamingLag | PostRunDrift
+    | SlowWrite | RollingDegradation | StaleSensor | PhantomSensor
+    | SensorFlapping | SplitSensor | TimestampForgery | FalseSuccess
+    | JobKill | PhantomTrigger | TriggerTimeout
 )
 
 # Map from mutation dataclass to the Go mutation type string.
@@ -165,6 +455,21 @@ _MUTATION_TYPE_NAMES: dict[type, str] = {
     MultiDay: "multi-day",
     Partial: "partial",
     Empty: "empty",
+    CascadeDelay: "cascade-delay",
+    OutOfOrder: "out-of-order",
+    StreamingLag: "streaming-lag",
+    PostRunDrift: "post-run-drift",
+    SlowWrite: "slow-write",
+    RollingDegradation: "rolling-degradation",
+    StaleSensor: "stale-sensor",
+    PhantomSensor: "phantom-sensor",
+    SensorFlapping: "sensor-flapping",
+    SplitSensor: "split-sensor",
+    TimestampForgery: "timestamp-forgery",
+    FalseSuccess: "false-success",
+    JobKill: "job-kill",
+    PhantomTrigger: "phantom-trigger",
+    TriggerTimeout: "trigger-timeout",
 }
 
 VALID_CATEGORIES = frozenset({
