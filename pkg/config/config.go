@@ -35,17 +35,22 @@ type AirflowAdapterConfig struct {
 	Headers map[string]string `yaml:"headers"`
 }
 
+// LoadFromBytes parses raw YAML bytes into a Config.
+func LoadFromBytes(data []byte) (Config, error) {
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, fmt.Errorf("config: parse: %w", err)
+	}
+	return cfg, nil
+}
+
 // Load reads and parses a YAML config file.
 func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("config: read %s: %w", path, err)
 	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("config: parse %s: %w", path, err)
-	}
-	return cfg, nil
+	return LoadFromBytes(data)
 }
 
 // Validate checks that at most one adapter is configured.

@@ -201,6 +201,41 @@ adapters:
 	}
 }
 
+func TestLoadFromBytes_ValidYAML(t *testing.T) {
+	t.Parallel()
+	data := []byte(`
+adapters:
+  airflow:
+    url: "http://localhost:8080/api/v1"
+`)
+	cfg, err := config.LoadFromBytes(data)
+	if err != nil {
+		t.Fatalf("LoadFromBytes() error = %v", err)
+	}
+	if cfg.Adapters.Airflow.URL != "http://localhost:8080/api/v1" {
+		t.Errorf("Airflow.URL = %q", cfg.Adapters.Airflow.URL)
+	}
+}
+
+func TestLoadFromBytes_InvalidYAML(t *testing.T) {
+	t.Parallel()
+	_, err := config.LoadFromBytes([]byte("{{invalid"))
+	if err == nil {
+		t.Fatal("expected error for invalid YAML")
+	}
+}
+
+func TestLoadFromBytes_EmptyBytes(t *testing.T) {
+	t.Parallel()
+	cfg, err := config.LoadFromBytes([]byte(""))
+	if err != nil {
+		t.Fatalf("LoadFromBytes() error = %v", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("empty bytes should produce valid config: %v", err)
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
