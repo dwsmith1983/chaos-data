@@ -17,6 +17,8 @@ func rootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 
+	root.PersistentFlags().String("config", "", "Path to chaos-data config file (YAML)")
+
 	root.AddCommand(apiCmd())
 	root.AddCommand(catalogCmd())
 	root.AddCommand(injectCmd())
