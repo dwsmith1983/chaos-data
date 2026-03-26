@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/adapters/interlock"
 	"github.com/dwsmith1983/chaos-data/adapters/local"
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
+	"github.com/dwsmith1983/chaos-data/pkg/config"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
@@ -122,11 +124,35 @@ func injectCmd() *cobra.Command {
 				cfg.AssertPollInterval = types.Duration{Duration: time.Second}
 			}
 
+			var opts []engine.EngineOption
+			configPath, _ := cmd.Flags().GetString("config")
+			if configPath != "" {
+				fileCfg, loadErr := config.Load(configPath)
+				if loadErr != nil {
+					return loadErr
+				}
+				if valErr := fileCfg.Validate(); valErr != nil {
+					return valErr
+				}
+				a, buildErr := fileCfg.BuildAsserter()
+				if buildErr != nil {
+					return buildErr
+				}
+				if a != nil {
+					opts = append(opts, engine.WithAsserter(a))
+				}
+			} else {
+				reader := local.NewNoopEventReader()
+				a := interlock.NewAdapterAsserter(stateStore, reader)
+				opts = append(opts, engine.WithAsserter(a))
+			}
+
 			eng := engine.New(
 				cfg,
 				transport,
 				registry,
 				[]scenario.Scenario{sc},
+				opts...,
 			)
 
 			ctx := context.Background()
@@ -136,7 +162,27 @@ func injectCmd() *cobra.Command {
 				return fmt.Errorf("inject: %w", err)
 			}
 
-			return printRecords(cmd, records)
+			printErr := printRecords(cmd, records)
+
+			if assertWait && sc.Expected != nil && len(sc.Expected.Asserts) > 0 {
+				assertResults := eng.EvaluateAssertions(ctx, []scenario.Scenario{sc})
+				if len(assertResults) > 0 {
+					out := cmd.OutOrStdout()
+					fmt.Fprintf(out, "\n%d assertion(s) evaluated:\n", len(assertResults))
+					for _, r := range assertResults {
+						status := "UNSATISFIED"
+						if r.Satisfied {
+							status = "SATISFIED"
+						}
+						fmt.Fprintf(out, "  %s %s %s: %s\n", r.Assertion.Type, r.Assertion.Target, r.Assertion.Condition, status)
+						if r.Error != "" {
+							fmt.Fprintf(out, "    error: %s\n", r.Error)
+						}
+					}
+				}
+			}
+
+			return printErr
 		},
 	}
 
