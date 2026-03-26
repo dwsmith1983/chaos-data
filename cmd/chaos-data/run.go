@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
+	"github.com/dwsmith1983/chaos-data/pkg/config"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
@@ -99,13 +100,34 @@ func runCmd() *cobra.Command {
 				cfg.AssertPollInterval = types.Duration{Duration: time.Second}
 			}
 
+			var opts []engine.EngineOption
+			opts = append(opts, engine.WithEmitter(emitter))
+			opts = append(opts, engine.WithSafety(safety))
+
+			configPath, _ := cmd.Flags().GetString("config")
+			if configPath != "" {
+				fileCfg, loadErr := config.Load(configPath)
+				if loadErr != nil {
+					return loadErr
+				}
+				if err := fileCfg.Validate(); err != nil {
+					return err
+				}
+				asserter, buildErr := fileCfg.BuildAsserter()
+				if buildErr != nil {
+					return buildErr
+				}
+				if asserter != nil {
+					opts = append(opts, engine.WithAsserter(asserter))
+				}
+			}
+
 			eng := engine.New(
 				cfg,
 				transport,
 				registry,
 				[]scenario.Scenario{sc},
-				engine.WithEmitter(emitter),
-				engine.WithSafety(safety),
+				opts...,
 			)
 
 			ctx := context.Background()
