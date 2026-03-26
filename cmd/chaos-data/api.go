@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/adapters/interlock"
 	"github.com/dwsmith1983/chaos-data/adapters/local"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
+	"github.com/dwsmith1983/chaos-data/pkg/config"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -42,12 +45,28 @@ func apiCmd() *cobra.Command {
 		Use:   "api",
 		Short: "JSON stdin/stdout API for programmatic access",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAPI(cmd.InOrStdin(), cmd.OutOrStdout())
+			var asserter adapter.Asserter
+			configPath, _ := cmd.Flags().GetString("config")
+			if configPath != "" {
+				fileCfg, err := config.Load(configPath)
+				if err != nil {
+					return err
+				}
+				if err := fileCfg.Validate(); err != nil {
+					return err
+				}
+				var buildErr error
+				asserter, buildErr = fileCfg.BuildAsserter()
+				if buildErr != nil {
+					return buildErr
+				}
+			}
+			return runAPI(cmd.InOrStdin(), cmd.OutOrStdout(), asserter)
 		},
 	}
 }
 
-func runAPI(in io.Reader, out io.Writer) error {
+func runAPI(in io.Reader, out io.Writer, asserter adapter.Asserter) error {
 	var req apiRequest
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return writeResponse(out, apiResponse{
@@ -60,11 +79,11 @@ func runAPI(in io.Reader, out io.Writer) error {
 	case "catalog":
 		return handleCatalogAPI(out)
 	case "inject":
-		return handleInjectAPI(out, req.Params)
+		return handleInjectAPI(out, req.Params, asserter)
 	case "release":
 		return handleReleaseAPI(out, req.Params)
 	case "run":
-		return handleRunAPI(out, req.Params)
+		return handleRunAPI(out, req.Params, asserter)
 	case "status":
 		return handleStatusAPI(out, req.Params)
 	default:
@@ -110,7 +129,7 @@ func handleCatalogAPI(out io.Writer) error {
 	})
 }
 
-func handleRunAPI(out io.Writer, params map[string]string) error {
+func handleRunAPI(out io.Writer, params map[string]string, asserter adapter.Asserter) error {
 	scenarioName := params["scenario"]
 	inputDir := params["input"]
 	outputDir := params["output"]
@@ -150,12 +169,17 @@ func handleRunAPI(out io.Writer, params map[string]string) error {
 	safety := local.NewConfigSafety(types.Defaults().Safety)
 	registry := defaultRegistry()
 
+	opts := []engine.EngineOption{engine.WithSafety(safety)}
+	if asserter != nil {
+		opts = append(opts, engine.WithAsserter(asserter))
+	}
+
 	eng := engine.New(
 		types.Defaults(),
 		transport,
 		registry,
 		[]scenario.Scenario{sc},
-		engine.WithSafety(safety),
+		opts...,
 	)
 
 	ctx := context.Background()
@@ -283,7 +307,7 @@ func handleReleaseAPI(out io.Writer, params map[string]string) error {
 	})
 }
 
-func handleInjectAPI(out io.Writer, params map[string]string) error {
+func handleInjectAPI(out io.Writer, params map[string]string, asserter adapter.Asserter) error {
 	scenarioName := params["scenario"]
 	inputDir := params["input"]
 	outputDir := params["output"]
@@ -345,11 +369,21 @@ func handleInjectAPI(out io.Writer, params map[string]string) error {
 		},
 	}
 
+	var opts []engine.EngineOption
+	if asserter != nil {
+		opts = append(opts, engine.WithAsserter(asserter))
+	} else {
+		reader := local.NewNoopEventReader()
+		interlockAsserter := interlock.NewAdapterAsserter(stateStore, reader)
+		opts = append(opts, engine.WithAsserter(interlockAsserter))
+	}
+
 	eng := engine.New(
 		cfg,
 		transport,
 		registry,
 		[]scenario.Scenario{sc},
+		opts...,
 	)
 
 	ctx := context.Background()

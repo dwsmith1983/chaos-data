@@ -14,7 +14,7 @@ func TestRunAPI_Catalog(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"catalog","params":{}}`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -37,7 +37,7 @@ func TestRunAPI_CatalogContainsEntries(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"catalog","params":{}}`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRunAPI_UnknownAction(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"bogus","params":{}}`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestRunAPI_InvalidJSON(t *testing.T) {
 	input := bytes.NewBufferString(`not json`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -123,7 +123,7 @@ func TestRunAPI_RunMissingParams(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"run","params":{}}`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -146,7 +146,7 @@ func TestRunAPI_RunMissingScenario(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"run","params":{"input":"/tmp/in","output":"/tmp/out"}}`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -166,7 +166,7 @@ func TestRunAPI_RunMissingInput(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"run","params":{"scenario":"late-data","output":"/tmp/out"}}`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -211,7 +211,7 @@ func TestRunAPI_RunEndToEnd(t *testing.T) {
 	in := bytes.NewBuffer(reqJSON)
 	out := &bytes.Buffer{}
 
-	if err := runAPI(in, out); err != nil {
+	if err := runAPI(in, out, nil); err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
 
@@ -233,7 +233,7 @@ func TestRunAPI_RunInvalidScenario(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"run","params":{"scenario":"nonexistent","input":"/tmp/in","output":"/tmp/out"}}`)
 	output := &bytes.Buffer{}
 
-	err := runAPI(input, output)
+	err := runAPI(input, output, nil)
 	if err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
@@ -287,7 +287,7 @@ func TestRunAPI_StatusAction(t *testing.T) {
 	in := bytes.NewBuffer(reqJSON)
 	out := &bytes.Buffer{}
 
-	if err := runAPI(in, out); err != nil {
+	if err := runAPI(in, out, nil); err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
 
@@ -306,7 +306,7 @@ func TestRunAPI_StatusAction_MissingParams(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"status","params":{}}`)
 	output := &bytes.Buffer{}
 
-	if err := runAPI(input, output); err != nil {
+	if err := runAPI(input, output, nil); err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
 
@@ -339,7 +339,7 @@ func TestRunAPI_ReleaseAction(t *testing.T) {
 	in := bytes.NewBuffer(reqJSON)
 	out := &bytes.Buffer{}
 
-	if err := runAPI(in, out); err != nil {
+	if err := runAPI(in, out, nil); err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
 
@@ -358,7 +358,7 @@ func TestRunAPI_ReleaseAction_MissingParams(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"release","params":{}}`)
 	output := &bytes.Buffer{}
 
-	if err := runAPI(input, output); err != nil {
+	if err := runAPI(input, output, nil); err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
 
@@ -417,7 +417,7 @@ safety:
 	in := bytes.NewBuffer(reqJSON)
 	out := &bytes.Buffer{}
 
-	if err := runAPI(in, out); err != nil {
+	if err := runAPI(in, out, nil); err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
 
@@ -439,7 +439,7 @@ func TestRunAPI_InjectAction_MissingParams(t *testing.T) {
 	input := bytes.NewBufferString(`{"action":"inject","params":{}}`)
 	output := &bytes.Buffer{}
 
-	if err := runAPI(input, output); err != nil {
+	if err := runAPI(input, output, nil); err != nil {
 		t.Fatalf("runAPI() error = %v", err)
 	}
 
