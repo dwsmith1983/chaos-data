@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
+	"github.com/dwsmith1983/chaos-data/pkg/config"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
@@ -61,6 +62,28 @@ func serveCmd() *cobra.Command {
 			emitter := local.NewStdoutEmitter(cmd.OutOrStdout())
 			safety := local.NewConfigSafety(types.Defaults().Safety)
 
+			var opts []engine.EngineOption
+			opts = append(opts, engine.WithEmitter(emitter))
+			opts = append(opts, engine.WithSafety(safety))
+
+			configPath, _ := cmd.Flags().GetString("config")
+			if configPath != "" {
+				fileCfg, loadErr := config.Load(configPath)
+				if loadErr != nil {
+					return loadErr
+				}
+				if err := fileCfg.Validate(); err != nil {
+					return err
+				}
+				asserter, buildErr := fileCfg.BuildAsserter()
+				if buildErr != nil {
+					return buildErr
+				}
+				if asserter != nil {
+					opts = append(opts, engine.WithAsserter(asserter))
+				}
+			}
+
 			eng := engine.New(
 				types.EngineConfig{
 					Mode:   "probabilistic",
@@ -70,8 +93,7 @@ func serveCmd() *cobra.Command {
 				transport,
 				registry,
 				scenarios,
-				engine.WithEmitter(emitter),
-				engine.WithSafety(safety),
+				opts...,
 			)
 
 			ctx, cancel := context.WithTimeout(context.Background(), duration)
