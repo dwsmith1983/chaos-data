@@ -7,6 +7,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -16,6 +17,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	chaosaws "github.com/dwsmith1983/chaos-data/adapters/aws"
+	"github.com/dwsmith1983/chaos-data/pkg/config"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	"github.com/dwsmith1983/chaos-data/pkg/scenario"
@@ -56,6 +58,32 @@ func main() {
 	// when the engine supports state stores.
 	_ = state
 
+	var opts []engine.EngineOption
+	opts = append(opts, engine.WithEmitter(emitter))
+	opts = append(opts, engine.WithSafety(safety))
+
+	engCfg := defaultEngineConfig()
+
+	configYAML := os.Getenv("CHAOS_CONFIG_YAML")
+	if configYAML != "" {
+		chaosConfig, err := config.LoadFromBytes([]byte(configYAML))
+		if err != nil {
+			log.Fatalf("parse CHAOS_CONFIG_YAML: %v", err)
+		}
+		if err := chaosConfig.Validate(); err != nil {
+			log.Fatalf("validate config: %v", err)
+		}
+		asserter, err := chaosConfig.BuildAsserter()
+		if err != nil {
+			log.Fatalf("build asserter: %v", err)
+		}
+		if asserter != nil {
+			opts = append(opts, engine.WithAsserter(asserter))
+			engCfg.AssertWait = true
+			engCfg.AssertPollInterval = types.Duration{Duration: time.Second}
+		}
+	}
+
 	registry := buildRegistry()
 
 	scenarios, err := scenario.BuiltinCatalog()
@@ -64,12 +92,11 @@ func main() {
 	}
 
 	eng := engine.New(
-		defaultEngineConfig(),
+		engCfg,
 		transport,
 		registry,
 		scenarios,
-		engine.WithEmitter(emitter),
-		engine.WithSafety(safety),
+		opts...,
 	)
 
 	handler := chaosaws.NewProxyHandler(eng, transport, cfg.HoldPrefix)
