@@ -70,6 +70,27 @@ func createTables(db *sql.DB) error {
 			mode TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_events_experiment ON chaos_events(experiment_id)`,
+		`CREATE TABLE IF NOT EXISTS pipeline_configs (
+			pipeline TEXT NOT NULL PRIMARY KEY,
+			config TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS reruns (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			pipeline TEXT NOT NULL,
+			schedule TEXT NOT NULL,
+			date TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS job_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			pipeline TEXT NOT NULL,
+			schedule TEXT NOT NULL,
+			date TEXT NOT NULL,
+			event TEXT NOT NULL,
+			run_id TEXT NOT NULL DEFAULT '',
+			timestamp TEXT NOT NULL
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
@@ -262,31 +283,128 @@ func (s *SQLiteState) ReadChaosEvents(ctx context.Context, experimentID string) 
 }
 
 // WritePipelineConfig stores a pipeline configuration blob.
-func (s *SQLiteState) WritePipelineConfig(_ context.Context, _ string, _ []byte) error {
-	return fmt.Errorf("WritePipelineConfig: not yet implemented")
+func (s *SQLiteState) WritePipelineConfig(ctx context.Context, pipeline string, config []byte) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO pipeline_configs (pipeline, config) VALUES (?, ?)`,
+		pipeline, string(config),
+	)
+	if err != nil {
+		return fmt.Errorf("write pipeline config: %w", err)
+	}
+	return nil
 }
 
 // ReadPipelineConfig retrieves a pipeline configuration blob.
-func (s *SQLiteState) ReadPipelineConfig(_ context.Context, _ string) ([]byte, error) {
-	return nil, fmt.Errorf("ReadPipelineConfig: not yet implemented")
+// If no row exists for the given pipeline, nil is returned without error.
+func (s *SQLiteState) ReadPipelineConfig(ctx context.Context, pipeline string) ([]byte, error) {
+	var config string
+	row := s.db.QueryRowContext(ctx,
+		`SELECT config FROM pipeline_configs WHERE pipeline = ?`,
+		pipeline,
+	)
+	if err := row.Scan(&config); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read pipeline config: %w", err)
+	}
+	return []byte(config), nil
 }
 
-// DeleteByPrefix removes all state entries matching the given prefix.
-func (s *SQLiteState) DeleteByPrefix(_ context.Context, _ string) error {
-	return fmt.Errorf("DeleteByPrefix: not yet implemented")
+// DeleteByPrefix removes all state entries whose pipeline matches the given
+// prefix. The operation is wrapped in a transaction for atomicity. Tables
+// without a pipeline column (e.g. chaos_events) are skipped.
+func (s *SQLiteState) DeleteByPrefix(ctx context.Context, prefix string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("delete by prefix: begin tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after commit is a no-op
+
+	tables := []struct {
+		table  string
+		column string
+	}{
+		{"sensors", "pipeline"},
+		{"triggers", "pipeline"},
+		{"pipeline_configs", "pipeline"},
+		{"reruns", "pipeline"},
+		{"job_events", "pipeline"},
+	}
+
+	for _, tbl := range tables {
+		if _, err := tx.ExecContext(ctx,
+			fmt.Sprintf(`DELETE FROM %s WHERE %s LIKE ? || '%%'`, tbl.table, tbl.column),
+			prefix,
+		); err != nil {
+			return fmt.Errorf("delete by prefix: %s: %w", tbl.table, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete by prefix: commit: %w", err)
+	}
+	return nil
 }
 
 // CountReruns returns the number of reruns for a pipeline/schedule/date.
-func (s *SQLiteState) CountReruns(_ context.Context, _, _, _ string) (int, error) {
-	return 0, fmt.Errorf("CountReruns: not yet implemented")
+func (s *SQLiteState) CountReruns(ctx context.Context, pipeline, schedule, date string) (int, error) {
+	var count int
+	row := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM reruns WHERE pipeline = ? AND schedule = ? AND date = ?`,
+		pipeline, schedule, date,
+	)
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("count reruns: %w", err)
+	}
+	return count, nil
 }
 
 // WriteRerun records a rerun event.
-func (s *SQLiteState) WriteRerun(_ context.Context, _, _, _, _ string) error {
-	return fmt.Errorf("WriteRerun: not yet implemented")
+func (s *SQLiteState) WriteRerun(ctx context.Context, pipeline, schedule, date, reason string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO reruns (pipeline, schedule, date, reason, created_at) VALUES (?, ?, ?, ?, ?)`,
+		pipeline, schedule, date, reason, time.Now().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return fmt.Errorf("write rerun: %w", err)
+	}
+	return nil
 }
 
-// ReadJobEvents returns job events for a pipeline/schedule/date.
-func (s *SQLiteState) ReadJobEvents(_ context.Context, _, _, _ string) ([]adapter.JobEvent, error) {
-	return nil, fmt.Errorf("ReadJobEvents: not yet implemented")
+// ReadJobEvents returns job events for a pipeline/schedule/date, ordered by
+// timestamp descending (most recent first). If no events exist, a non-nil
+// empty slice is returned.
+func (s *SQLiteState) ReadJobEvents(ctx context.Context, pipeline, schedule, date string) ([]adapter.JobEvent, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT pipeline, schedule, date, event, run_id, timestamp FROM job_events WHERE pipeline = ? AND schedule = ? AND date = ? ORDER BY timestamp DESC`,
+		pipeline, schedule, date,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("read job events: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]adapter.JobEvent, 0)
+	for rows.Next() {
+		var (
+			je adapter.JobEvent
+			ts string
+		)
+		if err := rows.Scan(&je.Pipeline, &je.Schedule, &je.Date, &je.Event, &je.RunID, &ts); err != nil {
+			return nil, fmt.Errorf("read job events: scan: %w", err)
+		}
+		if ts != "" {
+			t, err := time.Parse(time.RFC3339Nano, ts)
+			if err != nil {
+				return nil, fmt.Errorf("read job events: parse timestamp: %w", err)
+			}
+			je.Timestamp = t
+		}
+		events = append(events, je)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read job events: iterate: %w", err)
+	}
+	return events, nil
 }

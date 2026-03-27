@@ -321,3 +321,318 @@ func TestSQLiteState_ReadChaosEvents_Empty(t *testing.T) {
 		t.Errorf("ReadChaosEvents() returned %d events, want 0", len(got))
 	}
 }
+
+func TestSQLiteState_WritePipelineConfig_ReadPipelineConfig(t *testing.T) {
+	t.Parallel()
+	s := newTestSQLiteState(t)
+	ctx := context.Background()
+
+	config := []byte(`{"pipeline":{"id":"test-pipe","schedule":"daily"}}`)
+	if err := s.WritePipelineConfig(ctx, "test-pipe", config); err != nil {
+		t.Fatalf("WritePipelineConfig() error = %v", err)
+	}
+
+	got, err := s.ReadPipelineConfig(ctx, "test-pipe")
+	if err != nil {
+		t.Fatalf("ReadPipelineConfig() error = %v", err)
+	}
+	if string(got) != string(config) {
+		t.Errorf("ReadPipelineConfig() = %q, want %q", got, config)
+	}
+}
+
+func TestSQLiteState_WritePipelineConfig_Overwrite(t *testing.T) {
+	t.Parallel()
+	s := newTestSQLiteState(t)
+	ctx := context.Background()
+
+	config1 := []byte(`{"version":1}`)
+	config2 := []byte(`{"version":2}`)
+
+	if err := s.WritePipelineConfig(ctx, "test-pipe", config1); err != nil {
+		t.Fatalf("WritePipelineConfig(v1) error = %v", err)
+	}
+	if err := s.WritePipelineConfig(ctx, "test-pipe", config2); err != nil {
+		t.Fatalf("WritePipelineConfig(v2) error = %v", err)
+	}
+
+	got, err := s.ReadPipelineConfig(ctx, "test-pipe")
+	if err != nil {
+		t.Fatalf("ReadPipelineConfig() error = %v", err)
+	}
+	if string(got) != string(config2) {
+		t.Errorf("ReadPipelineConfig() = %q, want %q", got, config2)
+	}
+}
+
+func TestSQLiteState_ReadPipelineConfig_NotFound(t *testing.T) {
+	t.Parallel()
+	s := newTestSQLiteState(t)
+	ctx := context.Background()
+
+	got, err := s.ReadPipelineConfig(ctx, "nonexistent-pipe")
+	if err != nil {
+		t.Fatalf("ReadPipelineConfig() error = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("ReadPipelineConfig() = %q, want nil", got)
+	}
+}
+
+func TestSQLiteState_DeleteByPrefix(t *testing.T) {
+	t.Parallel()
+	s := newTestSQLiteState(t)
+	ctx := context.Background()
+
+	// Write sensors for two different pipeline prefixes.
+	sensorA := adapter.SensorData{
+		Pipeline:    "suite-001-pipe-a",
+		Key:         "sensor-1",
+		Status:      types.SensorStatusReady,
+		LastUpdated: time.Now().UTC().Truncate(time.Nanosecond),
+	}
+	sensorB := adapter.SensorData{
+		Pipeline:    "other-pipe",
+		Key:         "sensor-2",
+		Status:      types.SensorStatusReady,
+		LastUpdated: time.Now().UTC().Truncate(time.Nanosecond),
+	}
+	if err := s.WriteSensor(ctx, sensorA.Pipeline, sensorA.Key, sensorA); err != nil {
+		t.Fatalf("WriteSensor(suite-001) error = %v", err)
+	}
+	if err := s.WriteSensor(ctx, sensorB.Pipeline, sensorB.Key, sensorB); err != nil {
+		t.Fatalf("WriteSensor(other) error = %v", err)
+	}
+
+	// Write trigger statuses for both prefixes.
+	trigA := adapter.TriggerKey{Pipeline: "suite-001-pipe-a", Schedule: "daily", Date: "2025-01-01"}
+	trigB := adapter.TriggerKey{Pipeline: "other-pipe", Schedule: "daily", Date: "2025-01-01"}
+	if err := s.WriteTriggerStatus(ctx, trigA, "fired"); err != nil {
+		t.Fatalf("WriteTriggerStatus(suite-001) error = %v", err)
+	}
+	if err := s.WriteTriggerStatus(ctx, trigB, "fired"); err != nil {
+		t.Fatalf("WriteTriggerStatus(other) error = %v", err)
+	}
+
+	// Write pipeline configs for both prefixes.
+	if err := s.WritePipelineConfig(ctx, "suite-001-pipe-a", []byte(`{"id":"a"}`)); err != nil {
+		t.Fatalf("WritePipelineConfig(suite-001) error = %v", err)
+	}
+	if err := s.WritePipelineConfig(ctx, "other-pipe", []byte(`{"id":"b"}`)); err != nil {
+		t.Fatalf("WritePipelineConfig(other) error = %v", err)
+	}
+
+	// Write reruns for both prefixes.
+	if err := s.WriteRerun(ctx, "suite-001-pipe-a", "daily", "2025-01-01", "flaky"); err != nil {
+		t.Fatalf("WriteRerun(suite-001) error = %v", err)
+	}
+	if err := s.WriteRerun(ctx, "other-pipe", "daily", "2025-01-01", "flaky"); err != nil {
+		t.Fatalf("WriteRerun(other) error = %v", err)
+	}
+
+	// Delete everything with prefix "suite-001-".
+	if err := s.DeleteByPrefix(ctx, "suite-001-"); err != nil {
+		t.Fatalf("DeleteByPrefix() error = %v", err)
+	}
+
+	// suite-001 sensor should be gone.
+	gotA, err := s.ReadSensor(ctx, "suite-001-pipe-a", "sensor-1")
+	if err != nil {
+		t.Fatalf("ReadSensor(suite-001) after delete error = %v", err)
+	}
+	if gotA.Key != "" {
+		t.Errorf("ReadSensor(suite-001) after delete: got Key=%q, want empty (deleted)", gotA.Key)
+	}
+
+	// other-pipe sensor should remain.
+	gotB, err := s.ReadSensor(ctx, "other-pipe", "sensor-2")
+	if err != nil {
+		t.Fatalf("ReadSensor(other) after delete error = %v", err)
+	}
+	if gotB.Key != "sensor-2" {
+		t.Errorf("ReadSensor(other) after delete: got Key=%q, want %q", gotB.Key, "sensor-2")
+	}
+
+	// suite-001 trigger should be gone.
+	trigStatus, err := s.ReadTriggerStatus(ctx, trigA)
+	if err != nil {
+		t.Fatalf("ReadTriggerStatus(suite-001) after delete error = %v", err)
+	}
+	if trigStatus != "" {
+		t.Errorf("ReadTriggerStatus(suite-001) after delete = %q, want empty", trigStatus)
+	}
+
+	// other-pipe trigger should remain.
+	trigStatus, err = s.ReadTriggerStatus(ctx, trigB)
+	if err != nil {
+		t.Fatalf("ReadTriggerStatus(other) after delete error = %v", err)
+	}
+	if trigStatus != "fired" {
+		t.Errorf("ReadTriggerStatus(other) after delete = %q, want %q", trigStatus, "fired")
+	}
+
+	// suite-001 pipeline config should be gone.
+	cfgA, err := s.ReadPipelineConfig(ctx, "suite-001-pipe-a")
+	if err != nil {
+		t.Fatalf("ReadPipelineConfig(suite-001) after delete error = %v", err)
+	}
+	if cfgA != nil {
+		t.Errorf("ReadPipelineConfig(suite-001) after delete = %q, want nil", cfgA)
+	}
+
+	// other-pipe pipeline config should remain.
+	cfgB, err := s.ReadPipelineConfig(ctx, "other-pipe")
+	if err != nil {
+		t.Fatalf("ReadPipelineConfig(other) after delete error = %v", err)
+	}
+	if string(cfgB) != `{"id":"b"}` {
+		t.Errorf("ReadPipelineConfig(other) after delete = %q, want %q", cfgB, `{"id":"b"}`)
+	}
+
+	// suite-001 reruns should be gone.
+	countA, err := s.CountReruns(ctx, "suite-001-pipe-a", "daily", "2025-01-01")
+	if err != nil {
+		t.Fatalf("CountReruns(suite-001) after delete error = %v", err)
+	}
+	if countA != 0 {
+		t.Errorf("CountReruns(suite-001) after delete = %d, want 0", countA)
+	}
+
+	// other-pipe reruns should remain.
+	countB, err := s.CountReruns(ctx, "other-pipe", "daily", "2025-01-01")
+	if err != nil {
+		t.Fatalf("CountReruns(other) after delete error = %v", err)
+	}
+	if countB != 1 {
+		t.Errorf("CountReruns(other) after delete = %d, want 1", countB)
+	}
+}
+
+func TestSQLiteState_WriteRerun_CountReruns(t *testing.T) {
+	t.Parallel()
+	s := newTestSQLiteState(t)
+	ctx := context.Background()
+
+	// No reruns initially.
+	count, err := s.CountReruns(ctx, "pipe-a", "daily", "2025-07-01")
+	if err != nil {
+		t.Fatalf("CountReruns() initial error = %v", err)
+	}
+	if count != 0 {
+		t.Errorf("CountReruns() initial = %d, want 0", count)
+	}
+
+	// Write two reruns.
+	if err := s.WriteRerun(ctx, "pipe-a", "daily", "2025-07-01", "flaky test"); err != nil {
+		t.Fatalf("WriteRerun(1) error = %v", err)
+	}
+	if err := s.WriteRerun(ctx, "pipe-a", "daily", "2025-07-01", "timeout"); err != nil {
+		t.Fatalf("WriteRerun(2) error = %v", err)
+	}
+
+	count, err = s.CountReruns(ctx, "pipe-a", "daily", "2025-07-01")
+	if err != nil {
+		t.Fatalf("CountReruns() after writes error = %v", err)
+	}
+	if count != 2 {
+		t.Errorf("CountReruns() after writes = %d, want 2", count)
+	}
+
+	// Different date should have zero reruns.
+	count, err = s.CountReruns(ctx, "pipe-a", "daily", "2025-07-02")
+	if err != nil {
+		t.Fatalf("CountReruns() different date error = %v", err)
+	}
+	if count != 0 {
+		t.Errorf("CountReruns() different date = %d, want 0", count)
+	}
+}
+
+func TestSQLiteState_ReadJobEvents(t *testing.T) {
+	t.Parallel()
+	s := newTestSQLiteState(t)
+	ctx := context.Background()
+
+	// Insert job events directly via the database for test setup,
+	// since there is no WriteJobEvent method on the interface.
+	// We access the DB through WriteSensor to ensure tables are created,
+	// then use the exported DB method or raw SQL.
+	// Since SQLiteState.db is unexported, we insert via ExecSQL helper or
+	// by using the WriteRerun method to ensure the DB is initialized, then
+	// we can test ReadJobEvents if we can insert test data.
+	//
+	// Actually, the job_events table is created in createTables. We need
+	// a way to insert test data. Let's use a helper approach.
+
+	// We'll test that ReadJobEvents returns empty for no rows.
+	got, err := s.ReadJobEvents(ctx, "pipe-a", "daily", "2025-07-01")
+	if err != nil {
+		t.Fatalf("ReadJobEvents() empty error = %v", err)
+	}
+	if got == nil {
+		t.Fatal("ReadJobEvents() returned nil, want non-nil empty slice")
+	}
+	if len(got) != 0 {
+		t.Errorf("ReadJobEvents() returned %d events, want 0", len(got))
+	}
+}
+
+func TestSQLiteState_ReadJobEvents_WithData(t *testing.T) {
+	t.Parallel()
+	// Since job_events has no public write method, we use a helper
+	// that creates an SQLiteState and manually inserts rows.
+	s, err := local.NewSQLiteState(":memory:")
+	if err != nil {
+		t.Fatalf("NewSQLiteState error = %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+	ctx := context.Background()
+
+	// Insert test rows using InsertJobEventForTest (a test helper we'll add).
+	if err := s.InsertJobEventForTest("pipe-a", "daily", "2025-07-01", "started", "run-1", "2025-07-01T10:00:00Z"); err != nil {
+		t.Fatalf("insert job event 1: %v", err)
+	}
+	if err := s.InsertJobEventForTest("pipe-a", "daily", "2025-07-01", "completed", "run-1", "2025-07-01T10:05:00Z"); err != nil {
+		t.Fatalf("insert job event 2: %v", err)
+	}
+	if err := s.InsertJobEventForTest("pipe-a", "daily", "2025-07-01", "failed", "run-2", "2025-07-01T10:10:00Z"); err != nil {
+		t.Fatalf("insert job event 3: %v", err)
+	}
+	// Different pipeline — should not appear.
+	if err := s.InsertJobEventForTest("pipe-b", "daily", "2025-07-01", "started", "run-3", "2025-07-01T11:00:00Z"); err != nil {
+		t.Fatalf("insert job event 4: %v", err)
+	}
+
+	got, err := s.ReadJobEvents(ctx, "pipe-a", "daily", "2025-07-01")
+	if err != nil {
+		t.Fatalf("ReadJobEvents() error = %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("ReadJobEvents() returned %d events, want 3", len(got))
+	}
+
+	// Should be ordered by timestamp DESC.
+	if got[0].Event != "failed" {
+		t.Errorf("first event = %q, want %q (most recent)", got[0].Event, "failed")
+	}
+	if got[0].RunID != "run-2" {
+		t.Errorf("first event RunID = %q, want %q", got[0].RunID, "run-2")
+	}
+	if got[1].Event != "completed" {
+		t.Errorf("second event = %q, want %q", got[1].Event, "completed")
+	}
+	if got[2].Event != "started" {
+		t.Errorf("third event = %q, want %q (oldest)", got[2].Event, "started")
+	}
+
+	// Verify fields on first event.
+	if got[0].Pipeline != "pipe-a" {
+		t.Errorf("first event Pipeline = %q, want %q", got[0].Pipeline, "pipe-a")
+	}
+	if got[0].Schedule != "daily" {
+		t.Errorf("first event Schedule = %q, want %q", got[0].Schedule, "daily")
+	}
+	if got[0].Date != "2025-07-01" {
+		t.Errorf("first event Date = %q, want %q", got[0].Date, "2025-07-01")
+	}
+}
