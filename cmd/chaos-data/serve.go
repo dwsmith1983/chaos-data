@@ -43,6 +43,10 @@ func serveCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("read --dry-run flag: %w", err)
 			}
+			assertWait, err := cmd.Flags().GetBool("assert-wait")
+			if err != nil {
+				return fmt.Errorf("read --assert-wait flag: %w", err)
+			}
 
 			// Load all built-in catalog scenarios.
 			allScenarios, err := scenario.BuiltinCatalog()
@@ -66,7 +70,8 @@ func serveCmd() *cobra.Command {
 			opts = append(opts, engine.WithEmitter(emitter))
 			opts = append(opts, engine.WithSafety(safety))
 
-			configPath, _ := cmd.Flags().GetString("config")
+			configFlag, _ := cmd.Flags().GetString("config")
+			configPath := resolveConfigPath(configFlag)
 			if configPath != "" {
 				fileCfg, loadErr := config.Load(configPath)
 				if loadErr != nil {
@@ -84,12 +89,18 @@ func serveCmd() *cobra.Command {
 				}
 			}
 
+			engCfg := types.EngineConfig{
+				Mode:   "probabilistic",
+				Safety: types.Defaults().Safety,
+				DryRun: dryRun,
+			}
+			if assertWait {
+				engCfg.AssertWait = true
+				engCfg.AssertPollInterval = types.Duration{Duration: time.Second}
+			}
+
 			eng := engine.New(
-				types.EngineConfig{
-					Mode:   "probabilistic",
-					Safety: types.Defaults().Safety,
-					DryRun: dryRun,
-				},
+				engCfg,
 				transport,
 				registry,
 				scenarios,
@@ -106,6 +117,39 @@ func serveCmd() *cobra.Command {
 				return fmt.Errorf("probabilistic run: %w", err)
 			}
 
+			if assertWait {
+				// Collect scenarios that had mutations applied.
+				scenarioApplied := make(map[string]bool)
+				for _, r := range records {
+					if r.Applied {
+						scenarioApplied[r.Scenario] = true
+					}
+				}
+				var appliedScenarios []scenario.Scenario
+				for _, sc := range scenarios {
+					if sc.Expected != nil && scenarioApplied[sc.Name] {
+						appliedScenarios = append(appliedScenarios, sc)
+					}
+				}
+				if len(appliedScenarios) > 0 {
+					assertResults := eng.EvaluateAssertions(ctx, appliedScenarios)
+					if len(assertResults) > 0 {
+						out := cmd.OutOrStdout()
+						fmt.Fprintf(out, "\n%d assertion(s) evaluated:\n", len(assertResults))
+						for _, r := range assertResults {
+							status := "UNSATISFIED"
+							if r.Satisfied {
+								status = "SATISFIED"
+							}
+							fmt.Fprintf(out, "  %s %s %s: %s\n", r.Assertion.Type, r.Assertion.Target, r.Assertion.Condition, status)
+							if r.Error != "" {
+								fmt.Fprintf(out, "    error: %s\n", r.Error)
+							}
+						}
+					}
+				}
+			}
+
 			return printRecords(cmd, records)
 		},
 	}
@@ -115,6 +159,7 @@ func serveCmd() *cobra.Command {
 	cmd.Flags().DurationP("interval", "n", 30*time.Second, "Interval between chaos iterations")
 	cmd.Flags().DurationP("duration", "d", 1*time.Hour, "Total duration to run")
 	cmd.Flags().Bool("dry-run", false, "Preview mutations without applying them")
+	cmd.Flags().Bool("assert-wait", false, "Evaluate assertions after probabilistic run completes")
 
 	_ = cmd.MarkFlagRequired("input")
 	_ = cmd.MarkFlagRequired("output")

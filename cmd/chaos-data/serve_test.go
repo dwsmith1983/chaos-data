@@ -84,10 +84,42 @@ func TestServeCmd_FlagParsing(t *testing.T) {
 
 	output := buf.String()
 	// Verify flags are registered.
-	for _, flag := range []string{"--input", "--output", "--interval", "--duration"} {
+	for _, flag := range []string{"--input", "--output", "--interval", "--duration", "--assert-wait"} {
 		if !bytes.Contains([]byte(output), []byte(flag)) {
 			t.Errorf("expected help to mention flag %q, got:\n%s", flag, output)
 		}
+	}
+}
+
+func TestServeCmd_AssertWait(t *testing.T) {
+	t.Parallel()
+
+	inputDir := t.TempDir()
+	outputDir := t.TempDir()
+
+	testData := `{"id":1,"name":"alice"}
+`
+	testFile := filepath.Join(inputDir, "data.jsonl")
+	if err := os.WriteFile(testFile, []byte(testData), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	cmd := rootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{
+		"serve",
+		"--input", inputDir,
+		"--output", outputDir,
+		"--interval", "50ms",
+		"--duration", "200ms",
+		"--assert-wait",
+	})
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("serve --assert-wait failed: %v\noutput: %s", err, buf.String())
 	}
 }
 
