@@ -22,6 +22,8 @@ go.work.sum
 .idea/
 .vscode/
 .claude/
+.benchmarks/
+/python/.benchmarks/
 .worktrees/
 *.swp
 *.swo
@@ -48,3 +50,7 @@ __pycache__/
 .coverage
 dist/
 *.whl
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.benchmarks/
