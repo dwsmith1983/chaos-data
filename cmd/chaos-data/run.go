@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/adapters/local"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/config"
 	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
@@ -88,9 +89,68 @@ func runCmd() *cobra.Command {
 				return err
 			}
 
-			transport := local.NewFSTransport(inputDir, outputDir)
-			emitter := local.NewStdoutEmitter(cmd.OutOrStdout())
-			safety := local.NewConfigSafety(types.Defaults().Safety)
+			// Load config.
+			configFlag, _ := cmd.Flags().GetString("config")
+			configPath := resolveConfigPath(configFlag)
+			var fileCfg config.Config
+			if configPath != "" {
+				var loadErr error
+				fileCfg, loadErr = config.Load(configPath)
+				if loadErr != nil {
+					return loadErr
+				}
+				if err := fileCfg.Validate(); err != nil {
+					return err
+				}
+			}
+
+			ctx := context.Background()
+
+			// Transport: CLI flags override config.
+			var transport adapter.DataTransport
+			if inputDir != "" && outputDir != "" {
+				transport = local.NewFSTransport(inputDir, outputDir)
+			} else {
+				var buildErr error
+				transport, buildErr = fileCfg.BuildTransport(ctx)
+				if buildErr != nil {
+					return buildErr
+				}
+				if transport == nil {
+					return errors.New("--input and --output are required when no transport is configured")
+				}
+			}
+
+			// Safety from config (defaults to ConfigSafety).
+			safety, safeErr := fileCfg.BuildSafety(ctx)
+			if safeErr != nil {
+				return safeErr
+			}
+
+			// Emitter from config (defaults to StdoutEmitter).
+			emitter, emitErr := fileCfg.BuildEmitter(ctx, cmd.OutOrStdout())
+			if emitErr != nil {
+				return emitErr
+			}
+
+			// Asserter from config.
+			asserter, assertErr := fileCfg.BuildAsserter()
+			if assertErr != nil {
+				return assertErr
+			}
+
+			// Build engine options.
+			var opts []engine.EngineOption
+			if emitter != nil {
+				opts = append(opts, engine.WithEmitter(emitter))
+			}
+			if safety != nil {
+				opts = append(opts, engine.WithSafety(safety))
+			}
+			if asserter != nil {
+				opts = append(opts, engine.WithAsserter(asserter))
+			}
+
 			registry := defaultRegistry()
 
 			cfg := types.Defaults()
@@ -98,29 +158,6 @@ func runCmd() *cobra.Command {
 			cfg.AssertWait = assertWait
 			if assertWait {
 				cfg.AssertPollInterval = types.Duration{Duration: time.Second}
-			}
-
-			var opts []engine.EngineOption
-			opts = append(opts, engine.WithEmitter(emitter))
-			opts = append(opts, engine.WithSafety(safety))
-
-			configFlag, _ := cmd.Flags().GetString("config")
-			configPath := resolveConfigPath(configFlag)
-			if configPath != "" {
-				fileCfg, loadErr := config.Load(configPath)
-				if loadErr != nil {
-					return loadErr
-				}
-				if err := fileCfg.Validate(); err != nil {
-					return err
-				}
-				asserter, buildErr := fileCfg.BuildAsserter()
-				if buildErr != nil {
-					return buildErr
-				}
-				if asserter != nil {
-					opts = append(opts, engine.WithAsserter(asserter))
-				}
 			}
 
 			eng := engine.New(
@@ -131,7 +168,6 @@ func runCmd() *cobra.Command {
 				opts...,
 			)
 
-			ctx := context.Background()
 			records, err := eng.Run(ctx)
 			if err != nil {
 				return fmt.Errorf("engine run: %w", err)
@@ -148,8 +184,6 @@ func runCmd() *cobra.Command {
 	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout (polls every 1s)")
 
 	_ = cmd.MarkFlagRequired("scenario")
-	_ = cmd.MarkFlagRequired("input")
-	_ = cmd.MarkFlagRequired("output")
 
 	return cmd
 }
