@@ -23,6 +23,7 @@ type Engine struct {
 	safety    adapter.SafetyController
 	resolver  adapter.DependencyResolver
 	asserter  adapter.Asserter
+	clock     adapter.Clock
 	mutations *mutation.Registry
 	scenarios []scenario.Scenario
 }
@@ -59,6 +60,15 @@ func WithAsserter(a adapter.Asserter) EngineOption {
 	return func(eng *Engine) { eng.asserter = a }
 }
 
+// WithClock attaches a Clock to the engine for time operations.
+// When not set, a WallClock is used by default.
+func WithClock(c adapter.Clock) EngineOption {
+	return func(eng *Engine) { eng.clock = c }
+}
+
+// Clock returns the engine's clock. This is primarily useful for testing.
+func (e *Engine) Clock() adapter.Clock { return e.clock }
+
 // New creates an Engine with the given configuration, transport, mutation
 // registry, scenarios, and optional dependencies.
 func New(
@@ -76,6 +86,9 @@ func New(
 	}
 	for _, opt := range opts {
 		opt(eng)
+	}
+	if eng.clock == nil {
+		eng.clock = adapter.NewWallClock()
 	}
 	return eng
 }

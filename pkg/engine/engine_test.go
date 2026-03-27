@@ -1553,3 +1553,47 @@ func TestRun_AssertWaitFalse_WritesUnevaluated(t *testing.T) {
 		t.Error("expected EvalAt to be zero (not evaluated)")
 	}
 }
+
+// --- WithClock option tests ---
+
+func TestEngine_UsesInjectedClock(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	clk := adapter.NewTestClock(start)
+
+	reg := mutation.NewRegistry()
+	eng := engine.New(
+		types.EngineConfig{Mode: "deterministic"},
+		&mockTransport{},
+		reg,
+		nil,
+		engine.WithClock(clk),
+	)
+	if eng.Clock() == nil {
+		t.Fatal("expected clock to be set")
+	}
+	if !eng.Clock().Now().Equal(start) {
+		t.Errorf("Clock().Now() = %v, want %v", eng.Clock().Now(), start)
+	}
+}
+
+func TestEngine_DefaultClockIsWallClock(t *testing.T) {
+	t.Parallel()
+
+	reg := mutation.NewRegistry()
+	eng := engine.New(
+		types.EngineConfig{Mode: "deterministic"},
+		&mockTransport{},
+		reg,
+		nil,
+	)
+	if eng.Clock() == nil {
+		t.Fatal("expected default clock to be set")
+	}
+	// Verify the default clock returns a time close to now (within 1 second).
+	now := time.Now()
+	clockNow := eng.Clock().Now()
+	if clockNow.Sub(now).Abs() > time.Second {
+		t.Errorf("default clock time %v is not close to wall time %v", clockNow, now)
+	}
+}
