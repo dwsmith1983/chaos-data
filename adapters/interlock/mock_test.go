@@ -143,6 +143,10 @@ type mockStateStore struct {
 	readSensorErr         bool
 	writeSensorErr        bool
 	writeTriggerStatusErr bool
+
+	// Configurable return values for CountReruns and ReadJobEvents.
+	reruns    int
+	jobEvents []adapter.JobEvent
 }
 
 func newMockStateStore() *mockStateStore {
@@ -264,13 +268,19 @@ func (m *mockStateStore) ReadPipelineConfig(_ context.Context, _ string) ([]byte
 func (m *mockStateStore) DeleteByPrefix(_ context.Context, _ string) error { return nil }
 
 func (m *mockStateStore) CountReruns(_ context.Context, _, _, _ string) (int, error) {
-	return 0, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.reruns, nil
 }
 
 func (m *mockStateStore) WriteRerun(_ context.Context, _, _, _, _ string) error { return nil }
 
 func (m *mockStateStore) ReadJobEvents(_ context.Context, _, _, _ string) ([]adapter.JobEvent, error) {
-	return nil, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	result := make([]adapter.JobEvent, len(m.jobEvents))
+	copy(result, m.jobEvents)
+	return result, nil
 }
 
 // mockEventEmitter implements adapter.EventEmitter and records calls.

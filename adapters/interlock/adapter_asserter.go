@@ -165,12 +165,51 @@ func (a *AdapterAsserter) evalInterlockEvent(ctx context.Context, assertion type
 	return false, nil
 }
 
-func (a *AdapterAsserter) evalJobState(_ context.Context, _ types.Assertion) (bool, error) {
-	// TODO(phase3): implement when StateStore.ReadJobEvents is available
-	return false, fmt.Errorf("job_state assertions not yet implemented: awaiting StateStore extension")
+func (a *AdapterAsserter) evalJobState(ctx context.Context, assertion types.Assertion) (bool, error) {
+	parts := strings.SplitN(assertion.Target, "/", 3)
+	if len(parts) != 3 {
+		return false, fmt.Errorf("job_state target %q: expected pipeline/schedule/date", assertion.Target)
+	}
+	events, err := a.store.ReadJobEvents(ctx, parts[0], parts[1], parts[2])
+	if err != nil {
+		return false, fmt.Errorf("eval job_state %q: %w", assertion.Target, err)
+	}
+	if len(events) == 0 {
+		// No events: only is_pending is true when there are no events.
+		return assertion.Condition == types.CondIsPending, nil
+	}
+	latest := events[0] // ReadJobEvents returns DESC order; first is most recent.
+	switch assertion.Condition {
+	case types.CondStatusFailed:
+		return latest.Event == "failed", nil
+	case types.CondStatusSuccess:
+		return latest.Event == "completed" || latest.Event == "succeeded", nil
+	case types.CondStatusRunning:
+		return latest.Event == "started" || latest.Event == "running", nil
+	case types.CondStatusKilled:
+		return latest.Event == "killed", nil
+	case types.CondIsPending:
+		return false, nil // events exist, so not pending
+	default:
+		return false, fmt.Errorf("unsupported job_state condition: %q", assertion.Condition)
+	}
 }
 
-func (a *AdapterAsserter) evalRerunState(_ context.Context, _ types.Assertion) (bool, error) {
-	// TODO(phase3): implement when StateStore.CountReruns is available
-	return false, fmt.Errorf("rerun_state assertions not yet implemented: awaiting StateStore extension")
+func (a *AdapterAsserter) evalRerunState(ctx context.Context, assertion types.Assertion) (bool, error) {
+	parts := strings.SplitN(assertion.Target, "/", 3)
+	if len(parts) != 3 {
+		return false, fmt.Errorf("rerun_state target %q: expected pipeline/schedule/date", assertion.Target)
+	}
+	count, err := a.store.CountReruns(ctx, parts[0], parts[1], parts[2])
+	if err != nil {
+		return false, fmt.Errorf("eval rerun_state %q: %w", assertion.Target, err)
+	}
+	switch assertion.Condition {
+	case types.CondExists:
+		return count > 0, nil
+	case types.CondNotExists:
+		return count == 0, nil
+	default:
+		return false, fmt.Errorf("unsupported rerun_state condition: %q", assertion.Condition)
+	}
 }

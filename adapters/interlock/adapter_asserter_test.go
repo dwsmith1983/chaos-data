@@ -334,7 +334,7 @@ func TestAdapterAsserter_UnsupportedType(t *testing.T) {
 	aa := interlock.NewAdapterAsserter(store, reader)
 
 	_, err := aa.Evaluate(context.Background(), types.Assertion{
-		Type: types.AssertJobState, Target: "job-1", Condition: types.CondStatusFailed,
+		Type: types.AssertionType("unknown_type"), Target: "whatever", Condition: types.CondStatusFailed,
 	})
 	if err == nil {
 		t.Fatal("expected error for unsupported type")
@@ -553,28 +553,298 @@ func TestAdapterAsserter_InterlockEvent_ManifestError(t *testing.T) {
 	}
 }
 
-// --- Job State and Rerun State stub tests ---
+// --- Job State tests ---
 
-func TestAdapterAsserter_JobState_ReturnsStubError(t *testing.T) {
+func TestAdapterAsserter_JobState_StatusFailed(t *testing.T) {
 	t.Parallel()
-	aa := interlock.NewAdapterAsserter(newMockStateStore(), newMockEventReader())
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "failed", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
 
-	_, err := aa.Evaluate(context.Background(), types.Assertion{
-		Type: types.AssertJobState, Target: "pipeline/schedule/2024-01-15", Condition: types.CondStatusFailed,
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusFailed,
 	})
-	if err == nil {
-		t.Fatal("expected error from job_state stub")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected job_state failed to be true")
 	}
 }
 
-func TestAdapterAsserter_RerunState_ReturnsStubError(t *testing.T) {
+func TestAdapterAsserter_JobState_StatusSuccess_Completed(t *testing.T) {
 	t.Parallel()
-	aa := interlock.NewAdapterAsserter(newMockStateStore(), newMockEventReader())
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "completed", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusSuccess,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected job_state success to be true for completed event")
+	}
+}
+
+func TestAdapterAsserter_JobState_StatusSuccess_Succeeded(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "succeeded", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusSuccess,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected job_state success to be true for succeeded event")
+	}
+}
+
+func TestAdapterAsserter_JobState_StatusRunning_Started(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "started", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusRunning,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected job_state running to be true for started event")
+	}
+}
+
+func TestAdapterAsserter_JobState_StatusRunning_Running(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "running", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusRunning,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected job_state running to be true for running event")
+	}
+}
+
+func TestAdapterAsserter_JobState_StatusKilled(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "killed", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusKilled,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected job_state killed to be true")
+	}
+}
+
+func TestAdapterAsserter_JobState_IsPending_NoEvents(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	// no job events configured
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondIsPending,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected job_state is_pending to be true when no events exist")
+	}
+}
+
+func TestAdapterAsserter_JobState_IsPending_HasEvents(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "started", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondIsPending,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected job_state is_pending to be false when events exist")
+	}
+}
+
+func TestAdapterAsserter_JobState_NoEvents(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusFailed,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected false when no job events")
+	}
+}
+
+func TestAdapterAsserter_JobState_MalformedTarget(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
 
 	_, err := aa.Evaluate(context.Background(), types.Assertion{
-		Type: types.AssertRerunState, Target: "pipeline/schedule/2024-01-15", Condition: types.CondExists,
+		Type: types.AssertJobState, Target: "only/two", Condition: types.CondStatusFailed,
 	})
 	if err == nil {
-		t.Fatal("expected error from rerun_state stub")
+		t.Fatal("expected error for malformed job_state target")
+	}
+}
+
+func TestAdapterAsserter_JobState_ConditionMismatch(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.jobEvents = []adapter.JobEvent{
+		{Pipeline: "pipe-a", Schedule: "hourly", Date: "2026-03-27T10", Event: "completed", RunID: "run-1"},
+	}
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusFailed,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected false: event is completed, not failed")
+	}
+}
+
+// --- Rerun State tests ---
+
+func TestAdapterAsserter_RerunState_Exists(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.reruns = 2
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertRerunState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected rerun_state exists to be true")
+	}
+}
+
+func TestAdapterAsserter_RerunState_Exists_WhenNone(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.reruns = 0
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertRerunState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected rerun_state exists to be false when count=0")
+	}
+}
+
+func TestAdapterAsserter_RerunState_NotExists_WhenNone(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.reruns = 0
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertRerunState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondNotExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected rerun_state not_exists to be true when count=0")
+	}
+}
+
+func TestAdapterAsserter_RerunState_NotExists_WhenSome(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	store.reruns = 3
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertRerunState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondNotExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected rerun_state not_exists to be false when count>0")
+	}
+}
+
+func TestAdapterAsserter_RerunState_MalformedTarget(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertRerunState, Target: "only/two", Condition: types.CondExists,
+	})
+	if err == nil {
+		t.Fatal("expected error for malformed rerun_state target")
+	}
+}
+
+func TestAdapterAsserter_RerunState_UnsupportedCondition(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	aa := interlock.NewAdapterAsserter(store, newMockEventReader())
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertRerunState, Target: "pipe-a/hourly/2026-03-27T10", Condition: types.CondStatusFailed,
+	})
+	if err == nil {
+		t.Fatal("expected error for unsupported rerun_state condition")
 	}
 }
