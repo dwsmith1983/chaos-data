@@ -1,0 +1,182 @@
+# Interlock Chaos Testing Suite — Capability Registry
+# 53 capabilities across 9 categories
+# Each capability maps to one or more chaos scenarios that probe it.
+# Status: COVERED (all scenarios pass), GAP (scenario fails), UNTESTED (no scenarios)
+
+capabilities:
+  validation:
+    - id: equals
+      description: Equals check on sensor field values
+      scenarios: []
+    - id: gte
+      description: Field value >= threshold
+      scenarios: []
+    - id: lte
+      description: Field value <= threshold
+      scenarios: []
+    - id: gt
+      description: Field value > threshold
+      scenarios: []
+    - id: lt
+      description: Field value < threshold
+      scenarios: []
+    - id: exists
+      description: Sensor key exists in control table
+      scenarios: []
+    - id: age_lt
+      description: Sensor timestamp freshness check
+      scenarios: []
+    - id: mode_all
+      description: ALL validation rules must pass
+      scenarios: []
+    - id: mode_any
+      description: ANY validation rule must pass
+      scenarios: []
+
+  trigger_types:
+    - id: http
+      description: HTTP endpoint trigger
+      scenarios: []
+    - id: command
+      description: Shell command trigger
+      scenarios: []
+    - id: airflow
+      description: Apache Airflow DAG trigger
+      scenarios: []
+    - id: glue
+      description: AWS Glue job trigger
+      scenarios: []
+    - id: emr
+      description: AWS EMR cluster trigger
+      scenarios: []
+    - id: emr-serverless
+      description: AWS EMR Serverless trigger
+      scenarios: []
+    - id: step-function
+      description: AWS Step Functions trigger
+      scenarios: []
+    - id: databricks
+      description: Databricks job trigger
+      scenarios: []
+    - id: lambda
+      description: AWS Lambda invocation trigger
+      scenarios: []
+
+  post_run:
+    - id: post_run_drift
+      description: Sensor count diverged after job completed
+      scenarios: []
+    - id: post_run_drift_inflight
+      description: Drift detected while job still running
+      scenarios: []
+    - id: post_run_passed
+      description: Post-run validation rules passed
+      scenarios: []
+    - id: post_run_failed
+      description: Post-run validation rules failed
+      scenarios: []
+    - id: post_run_sensor_missing
+      description: Post-run sensor never arrived within timeout
+      scenarios: []
+    - id: post_run_baseline_captured
+      description: Baseline snapshot recorded after job trigger
+      scenarios: []
+    - id: baseline_capture_failed
+      description: Baseline snapshot failed to record
+      scenarios: []
+
+  sla:
+    - id: sla_warning
+      description: Approaching SLA deadline
+      scenarios: []
+    - id: sla_breach
+      description: SLA deadline exceeded
+      scenarios: []
+    - id: sla_met
+      description: Completed within SLA deadline
+      scenarios: []
+    - id: relative_sla_warning
+      description: maxDuration warning threshold
+      scenarios: []
+    - id: relative_sla_breach
+      description: maxDuration exceeded
+      scenarios: []
+
+  watchdog:
+    - id: schedule_missed
+      description: Cron schedule missed
+      scenarios: []
+    - id: irregular_schedule_missed
+      description: Inclusion calendar date missed
+      scenarios: []
+    - id: sensor_deadline_expired
+      description: Trigger sensor deadline passed without arrival
+      scenarios: []
+    - id: sfn_timeout
+      description: Step Functions execution timeout
+      scenarios: []
+    - id: stale_trigger
+      description: Trigger stuck in non-terminal state
+      scenarios: []
+
+  recovery:
+    - id: rerun_accepted
+      description: Drift or manual rerun initiated
+      scenarios: []
+    - id: rerun_rejected
+      description: Circuit breaker blocked rerun (maxDriftReruns/maxManualReruns)
+      scenarios: []
+    - id: retry_exhausted
+      description: maxRetries exceeded
+      scenarios: []
+    - id: job_poll_exhausted
+      description: Job poll window exceeded
+      scenarios: []
+    - id: job_failure_retry
+      description: Automatic retry on job failure (maxCodeRetries)
+      scenarios: []
+    - id: trigger_recovered
+      description: Stale trigger recovered
+      scenarios: []
+
+  idempotency:
+    - id: sfn_execution_dedup
+      description: Same pipeline+schedule+date no duplicate execution
+      scenarios: []
+    - id: sla_warning_suppression
+      description: Warning suppressed if breach already fired
+      scenarios: []
+    - id: sla_alert_suppression_terminal
+      description: Alert suppressed when job completed/failed/timeout
+      scenarios: []
+    - id: dryrun_marker_dedup
+      description: Idempotent first-occurrence recording
+      scenarios: []
+
+  safety:
+    - id: pipeline_excluded
+      description: Calendar exclusion enforced
+      scenarios: []
+    - id: inclusion_calendar
+      description: Only runs on specified dates
+      scenarios: []
+    - id: dryrun_would_trigger
+      description: Dry-run event emission without real job
+      scenarios: []
+    - id: dryrun_detection
+      description: Dry-run post-run detection events
+      scenarios: []
+    - id: dryrun_absence
+      description: Real operational events NOT emitted in dry-run mode
+      scenarios: []
+
+  job_lifecycle:
+    - id: job_triggered
+      description: Job successfully triggered
+      scenarios: []
+    - id: job_terminal
+      description: Job completed or failed terminal states
+      scenarios: []
+    - id: validation_exhausted
+      description: Evaluation window expired without rules passing
+      scenarios: []
