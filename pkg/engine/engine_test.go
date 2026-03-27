@@ -1658,3 +1658,109 @@ func TestEngine_DefaultClockIsWallClock(t *testing.T) {
 		t.Errorf("default clock time %v is not close to wall time %v", clockNow, now)
 	}
 }
+
+// --- not_exists (negative polarity) tests ---
+
+func TestEvaluateAssertions_NotExists_PassesOnTimeout(t *testing.T) {
+	t.Parallel()
+	asserter := &mockAsserter{
+		supported: map[types.AssertionType]bool{types.AssertEventEmitted: true},
+		results:   map[string]bool{}, // Event never found (missing key returns false)
+	}
+
+	eng := engine.New(
+		types.EngineConfig{
+			Mode: "deterministic", AssertWait: true,
+			AssertPollInterval: types.Duration{Duration: 10 * time.Millisecond},
+		},
+		&mockTransport{},
+		mutation.NewRegistry(),
+		nil,
+		engine.WithAsserter(asserter),
+	)
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertEventEmitted, Target: "sc/mut", Condition: types.CondNotExists},
+	}, 50*time.Millisecond)
+
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if !results[0].Satisfied {
+		t.Error("not_exists assertion should be satisfied when event is never found")
+	}
+}
+
+func TestEvaluateAssertions_NotExists_FailsWhenFound(t *testing.T) {
+	t.Parallel()
+	asserter := &mockAsserter{
+		supported: map[types.AssertionType]bool{types.AssertEventEmitted: true},
+		results:   map[string]bool{"sc/mut": true}, // Event IS found
+	}
+
+	eng := engine.New(
+		types.EngineConfig{
+			Mode: "deterministic", AssertWait: true,
+			AssertPollInterval: types.Duration{Duration: 10 * time.Millisecond},
+		},
+		&mockTransport{},
+		mutation.NewRegistry(),
+		nil,
+		engine.WithAsserter(asserter),
+	)
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertEventEmitted, Target: "sc/mut", Condition: types.CondNotExists},
+	}, 200*time.Millisecond)
+
+	start := time.Now()
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+	elapsed := time.Since(start)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Satisfied {
+		t.Error("not_exists assertion should NOT be satisfied when event is found")
+	}
+	// Should fail fast, not wait the full 200ms.
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("expected fast failure, but took %v", elapsed)
+	}
+}
+
+func TestEvaluateAssertions_MixedPositiveAndNegative(t *testing.T) {
+	t.Parallel()
+	asserter := &mockAsserter{
+		supported: map[types.AssertionType]bool{types.AssertEventEmitted: true},
+		results:   map[string]bool{"found/event": true}, // only found/event is found
+	}
+
+	eng := engine.New(
+		types.EngineConfig{
+			Mode: "deterministic", AssertWait: true,
+			AssertPollInterval: types.Duration{Duration: 10 * time.Millisecond},
+		},
+		&mockTransport{},
+		mutation.NewRegistry(),
+		nil,
+		engine.WithAsserter(asserter),
+	)
+
+	sc := newAssertScenario("test", []types.Assertion{
+		{Type: types.AssertEventEmitted, Target: "found/event", Condition: types.CondExists},      // positive: should pass
+		{Type: types.AssertEventEmitted, Target: "missing/event", Condition: types.CondNotExists}, // negative: should pass (not found)
+	}, 50*time.Millisecond)
+
+	results := eng.EvaluateAssertions(context.Background(), []scenario.Scenario{sc})
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if !results[0].Satisfied {
+		t.Error("positive exists assertion should be satisfied")
+	}
+	if !results[1].Satisfied {
+		t.Error("negative not_exists assertion should be satisfied")
+	}
+}

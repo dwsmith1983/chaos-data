@@ -226,8 +226,20 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 	return records, nil
 }
 
+// isNegativeCondition returns true for conditions where the absence of the
+// target constitutes success (e.g. not_exists).
+func isNegativeCondition(c types.Condition) bool {
+	return c == types.CondNotExists
+}
+
 // EvaluateAssertions polls all assertions from the given scenarios until all are
 // satisfied or the maximum Within deadline (across all scenarios) elapses.
+//
+// Assertion polarity:
+//   - Positive (exists, is_ready, etc.): poll until found -> Satisfied=true;
+//     timeout -> Satisfied=false (FAIL).
+//   - Negative (not_exists): if found at any point -> Satisfied=false immediately
+//     (FAIL); timeout without finding -> Satisfied=true (PASS).
 //
 // Each assertion is routed:
 //  1. To the external Asserter (if set and Supports returns true)
@@ -239,6 +251,7 @@ func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Sc
 	type pendingAssertion struct {
 		assertion types.Assertion
 		idx       int
+		negative  bool
 	}
 	var results []types.AssertionResult
 	var pending []pendingAssertion
@@ -254,7 +267,11 @@ func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Sc
 		for _, a := range sc.Expected.Asserts {
 			idx := len(results)
 			results = append(results, types.AssertionResult{Assertion: a})
-			pending = append(pending, pendingAssertion{assertion: a, idx: idx})
+			pending = append(pending, pendingAssertion{
+				assertion: a,
+				idx:       idx,
+				negative:  isNegativeCondition(a.Condition),
+			})
 		}
 	}
 
@@ -289,7 +306,7 @@ func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Sc
 	if pollInterval <= 0 {
 		pollInterval = time.Second
 	}
-	ticker := time.NewTicker(pollInterval)
+	ticker := e.clock.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	dataAsserter := NewDataStateAsserter(e.transport)
@@ -297,19 +314,39 @@ func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Sc
 	for {
 		select {
 		case <-ctx.Done():
+			// Timeout: negative assertions still pending are satisfied (never found).
+			for _, p := range pending {
+				if p.negative {
+					results[p.idx].Satisfied = true
+					results[p.idx].EvalAt = e.clock.Now()
+				}
+			}
 			return results
-		case <-ticker.C:
+		case <-ticker.C():
 			remaining := pending[:0]
 			for _, p := range pending {
 				ok, err := e.evaluateOne(ctx, p.assertion, dataAsserter)
-				if ok && err == nil {
-					results[p.idx].Satisfied = true
-					results[p.idx].EvalAt = e.clock.Now()
-				} else {
-					if err != nil {
-						results[p.idx].Error = err.Error()
-					}
+				if err != nil {
+					results[p.idx].Error = err.Error()
 					remaining = append(remaining, p)
+					continue
+				}
+				if p.negative {
+					// Negative: if found, fail immediately; if not found, keep polling.
+					if ok {
+						results[p.idx].Satisfied = false
+						results[p.idx].EvalAt = e.clock.Now()
+					} else {
+						remaining = append(remaining, p)
+					}
+				} else {
+					// Positive: if found, pass; if not found, keep polling.
+					if ok {
+						results[p.idx].Satisfied = true
+						results[p.idx].EvalAt = e.clock.Now()
+					} else {
+						remaining = append(remaining, p)
+					}
 				}
 			}
 			pending = remaining
