@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -299,4 +301,230 @@ func writeTempFile(t *testing.T, content string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestBuildTransport_S3(t *testing.T) {
+	t.Parallel()
+	yaml := `
+transport:
+  type: "s3"
+  staging_bucket: "my-staging"
+  pipeline_bucket: "my-pipeline"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	transport, err := cfg.BuildTransport(context.Background())
+	if err != nil {
+		t.Fatalf("BuildTransport() error = %v", err)
+	}
+	if transport == nil {
+		t.Fatal("expected non-nil transport for type=s3")
+	}
+}
+
+func TestBuildTransport_S3_MissingStagingBucket(t *testing.T) {
+	t.Parallel()
+	yaml := `
+transport:
+  type: "s3"
+  pipeline_bucket: "my-pipeline"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	_, err := cfg.BuildTransport(context.Background())
+	if err == nil {
+		t.Fatal("expected error for missing staging_bucket")
+	}
+}
+
+func TestBuildTransport_FS(t *testing.T) {
+	t.Parallel()
+	yaml := `
+transport:
+  type: "fs"
+  input_dir: "/tmp/in"
+  output_dir: "/tmp/out"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	transport, err := cfg.BuildTransport(context.Background())
+	if err != nil {
+		t.Fatalf("BuildTransport() error = %v", err)
+	}
+	if transport == nil {
+		t.Fatal("expected non-nil transport for type=fs")
+	}
+}
+
+func TestBuildTransport_Empty(t *testing.T) {
+	t.Parallel()
+	yaml := "adapters: {}\n"
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	transport, err := cfg.BuildTransport(context.Background())
+	if err != nil {
+		t.Fatalf("BuildTransport() error = %v", err)
+	}
+	if transport != nil {
+		t.Fatal("expected nil transport when not configured")
+	}
+}
+
+func TestBuildTransport_UnknownType(t *testing.T) {
+	t.Parallel()
+	yaml := `
+transport:
+  type: "gcs"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	_, err := cfg.BuildTransport(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown transport type")
+	}
+}
+
+func TestBuildSafety_DynamoDB(t *testing.T) {
+	t.Parallel()
+	yaml := `
+safety:
+  type: "dynamodb"
+  table_name: "chaos-data"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	safety, err := cfg.BuildSafety(context.Background())
+	if err != nil {
+		t.Fatalf("BuildSafety() error = %v", err)
+	}
+	if safety == nil {
+		t.Fatal("expected non-nil safety for type=dynamodb")
+	}
+}
+
+func TestBuildSafety_DynamoDB_MissingTable(t *testing.T) {
+	t.Parallel()
+	yaml := `
+safety:
+  type: "dynamodb"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	_, err := cfg.BuildSafety(context.Background())
+	if err == nil {
+		t.Fatal("expected error for missing table_name")
+	}
+}
+
+func TestBuildSafety_Config(t *testing.T) {
+	t.Parallel()
+	yaml := `
+safety:
+  type: "config"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	safety, err := cfg.BuildSafety(context.Background())
+	if err != nil {
+		t.Fatalf("BuildSafety() error = %v", err)
+	}
+	if safety == nil {
+		t.Fatal("expected non-nil safety for type=config")
+	}
+}
+
+func TestBuildSafety_Empty_DefaultsToConfig(t *testing.T) {
+	t.Parallel()
+	yaml := "adapters: {}\n"
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	safety, err := cfg.BuildSafety(context.Background())
+	if err != nil {
+		t.Fatalf("BuildSafety() error = %v", err)
+	}
+	if safety == nil {
+		t.Fatal("expected non-nil safety (defaults to config)")
+	}
+}
+
+func TestBuildSafety_None(t *testing.T) {
+	t.Parallel()
+	yaml := `
+safety:
+  type: "none"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	safety, err := cfg.BuildSafety(context.Background())
+	if err != nil {
+		t.Fatalf("BuildSafety() error = %v", err)
+	}
+	if safety != nil {
+		t.Fatal("expected nil safety for type=none")
+	}
+}
+
+func TestBuildEmitter_EventBridge(t *testing.T) {
+	t.Parallel()
+	yaml := `
+emitter:
+  type: "eventbridge"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	emitter, err := cfg.BuildEmitter(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatalf("BuildEmitter() error = %v", err)
+	}
+	if emitter == nil {
+		t.Fatal("expected non-nil emitter for type=eventbridge")
+	}
+}
+
+func TestBuildEmitter_Stdout(t *testing.T) {
+	t.Parallel()
+	yaml := `
+emitter:
+  type: "stdout"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	emitter, err := cfg.BuildEmitter(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatalf("BuildEmitter() error = %v", err)
+	}
+	if emitter == nil {
+		t.Fatal("expected non-nil emitter for type=stdout")
+	}
+}
+
+func TestBuildEmitter_Empty_DefaultsToStdout(t *testing.T) {
+	t.Parallel()
+	yaml := "adapters: {}\n"
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	emitter, err := cfg.BuildEmitter(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatalf("BuildEmitter() error = %v", err)
+	}
+	if emitter == nil {
+		t.Fatal("expected non-nil emitter (defaults to stdout)")
+	}
+}
+
+func TestBuildEmitter_None(t *testing.T) {
+	t.Parallel()
+	yaml := `
+emitter:
+  type: "none"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	emitter, err := cfg.BuildEmitter(context.Background(), io.Discard)
+	if err != nil {
+		t.Fatalf("BuildEmitter() error = %v", err)
+	}
+	if emitter != nil {
+		t.Fatal("expected nil emitter for type=none")
+	}
 }
