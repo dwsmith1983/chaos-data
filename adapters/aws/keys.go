@@ -49,3 +49,43 @@ func CooldownPK() string {
 func CooldownSK(scenario string) string {
 	return scenario
 }
+
+// ConfigPK returns the partition key for a pipeline config record.
+func ConfigPK(pipeline string) string {
+	return "CONFIG#" + pipeline
+}
+
+// ConfigSK returns the sort key for a pipeline config record.
+func ConfigSK() string {
+	return "CONFIG"
+}
+
+// RerunPK returns the partition key for a rerun record.
+func RerunPK(pipeline string) string {
+	return "RERUN#" + pipeline
+}
+
+// RerunSK returns the sort key for a rerun record.
+func RerunSK(schedule, date, timestamp string) string {
+	return fmt.Sprintf("SCHED#%s#DATE#%s#TS#%s", schedule, date, timestamp)
+}
+
+// RerunSKPrefix returns the sort key prefix for querying reruns by schedule and date.
+func RerunSKPrefix(schedule, date string) string {
+	return fmt.Sprintf("SCHED#%s#DATE#%s#", schedule, date)
+}
+
+// JobEventPK returns the partition key for a job event record.
+func JobEventPK(pipeline string) string {
+	return "JOBEVENT#" + pipeline
+}
+
+// JobEventSK returns the sort key for a job event record.
+func JobEventSK(schedule, date, timestamp, runID string) string {
+	return fmt.Sprintf("SCHED#%s#DATE#%s#TS#%s#%s", schedule, date, timestamp, runID)
+}
+
+// JobEventSKPrefix returns the sort key prefix for querying job events by schedule and date.
+func JobEventSKPrefix(schedule, date string) string {
+	return fmt.Sprintf("SCHED#%s#DATE#%s#", schedule, date)
+}

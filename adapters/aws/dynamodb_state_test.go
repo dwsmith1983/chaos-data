@@ -514,3 +514,395 @@ func TestDynamoDBState_ReadChaosEvents_Error(t *testing.T) {
 		t.Errorf("expected nil events on error, got %v", events)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// WritePipelineConfig / ReadPipelineConfig
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBState_WritePipelineConfig_ReadPipelineConfig(t *testing.T) {
+	t.Parallel()
+
+	configData := []byte(`{"schedule":"daily","targets":["s3"]}`)
+
+	// Track PutItem calls
+	var capturedPut *dynamodb.PutItemInput
+	mock := &mockDynamoDBAPI{
+		PutItemFn: func(_ context.Context, params *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
+			capturedPut = params
+			return &dynamodb.PutItemOutput{}, nil
+		},
+		GetItemFn: func(_ context.Context, params *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			wantPK := chaosaws.ConfigPK("etl-pipeline")
+			wantSK := chaosaws.ConfigSK()
+			if got := params.Key["PK"].(*dynamodbtypes.AttributeValueMemberS).Value; got != wantPK {
+				t.Errorf("GetItem PK = %q, want %q", got, wantPK)
+			}
+			if got := params.Key["SK"].(*dynamodbtypes.AttributeValueMemberS).Value; got != wantSK {
+				t.Errorf("GetItem SK = %q, want %q", got, wantSK)
+			}
+			return &dynamodb.GetItemOutput{
+				Item: map[string]dynamodbtypes.AttributeValue{
+					"PK":     &dynamodbtypes.AttributeValueMemberS{Value: wantPK},
+					"SK":     &dynamodbtypes.AttributeValueMemberS{Value: wantSK},
+					"config": &dynamodbtypes.AttributeValueMemberS{Value: string(configData)},
+				},
+			}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+
+	// Write
+	err := store.WritePipelineConfig(context.Background(), "etl-pipeline", configData)
+	if err != nil {
+		t.Fatalf("WritePipelineConfig() error = %v", err)
+	}
+	if capturedPut == nil {
+		t.Fatal("PutItem was not called")
+	}
+	if got := *capturedPut.TableName; got != testTable {
+		t.Errorf("TableName = %q, want %q", got, testTable)
+	}
+
+	wantPK := chaosaws.ConfigPK("etl-pipeline")
+	wantSK := chaosaws.ConfigSK()
+	if got := capturedPut.Item["PK"].(*dynamodbtypes.AttributeValueMemberS).Value; got != wantPK {
+		t.Errorf("PK = %q, want %q", got, wantPK)
+	}
+	if got := capturedPut.Item["SK"].(*dynamodbtypes.AttributeValueMemberS).Value; got != wantSK {
+		t.Errorf("SK = %q, want %q", got, wantSK)
+	}
+	if got := capturedPut.Item["config"].(*dynamodbtypes.AttributeValueMemberS).Value; got != string(configData) {
+		t.Errorf("config = %q, want %q", got, string(configData))
+	}
+
+	// Read
+	got, err := store.ReadPipelineConfig(context.Background(), "etl-pipeline")
+	if err != nil {
+		t.Fatalf("ReadPipelineConfig() error = %v", err)
+	}
+	if string(got) != string(configData) {
+		t.Errorf("ReadPipelineConfig() = %q, want %q", string(got), string(configData))
+	}
+}
+
+func TestDynamoDBState_ReadPipelineConfig_NotFound(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockDynamoDBAPI{
+		GetItemFn: func(_ context.Context, _ *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+			return &dynamodb.GetItemOutput{Item: nil}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	got, err := store.ReadPipelineConfig(context.Background(), "missing-pipeline")
+	if err != nil {
+		t.Fatalf("ReadPipelineConfig() error = %v, want nil for missing item", err)
+	}
+	if got != nil {
+		t.Errorf("ReadPipelineConfig() = %v, want nil for missing item", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DeleteByPrefix
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBState_DeleteByPrefix(t *testing.T) {
+	t.Parallel()
+
+	// Scan returns 3 items, 2 matching prefix "SENSOR#etl", 1 not matching
+	// (but scan is server-side filtered, so mock returns only matches)
+	matchPK1 := "SENSOR#etl-pipe-1"
+	matchSK1 := "KEY#landing/orders"
+	matchPK2 := "SENSOR#etl-pipe-2"
+	matchSK2 := "KEY#landing/returns"
+
+	var capturedScan *dynamodb.ScanInput
+	var capturedBatch *dynamodb.BatchWriteItemInput
+
+	mock := &mockDynamoDBAPI{
+		ScanFn: func(_ context.Context, params *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
+			capturedScan = params
+			return &dynamodb.ScanOutput{
+				Items: []map[string]dynamodbtypes.AttributeValue{
+					{
+						"PK": &dynamodbtypes.AttributeValueMemberS{Value: matchPK1},
+						"SK": &dynamodbtypes.AttributeValueMemberS{Value: matchSK1},
+					},
+					{
+						"PK": &dynamodbtypes.AttributeValueMemberS{Value: matchPK2},
+						"SK": &dynamodbtypes.AttributeValueMemberS{Value: matchSK2},
+					},
+				},
+			}, nil
+		},
+		BatchWriteItemFn: func(_ context.Context, params *dynamodb.BatchWriteItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error) {
+			capturedBatch = params
+			return &dynamodb.BatchWriteItemOutput{}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	err := store.DeleteByPrefix(context.Background(), "SENSOR#etl")
+	if err != nil {
+		t.Fatalf("DeleteByPrefix() error = %v", err)
+	}
+
+	// Verify scan was called with filter expression
+	if capturedScan == nil {
+		t.Fatal("Scan was not called")
+	}
+	if got := *capturedScan.TableName; got != testTable {
+		t.Errorf("Scan TableName = %q, want %q", got, testTable)
+	}
+
+	// Verify batch write was called with 2 delete requests
+	if capturedBatch == nil {
+		t.Fatal("BatchWriteItem was not called")
+	}
+	requests := capturedBatch.RequestItems[testTable]
+	if len(requests) != 2 {
+		t.Fatalf("BatchWriteItem requests = %d, want 2", len(requests))
+	}
+
+	// Verify the keys in delete requests
+	del1 := requests[0].DeleteRequest
+	if del1 == nil {
+		t.Fatal("expected DeleteRequest, got nil")
+	}
+	gotPK1 := del1.Key["PK"].(*dynamodbtypes.AttributeValueMemberS).Value
+	gotSK1 := del1.Key["SK"].(*dynamodbtypes.AttributeValueMemberS).Value
+	if gotPK1 != matchPK1 || gotSK1 != matchSK1 {
+		t.Errorf("delete[0] PK=%q SK=%q, want PK=%q SK=%q", gotPK1, gotSK1, matchPK1, matchSK1)
+	}
+
+	del2 := requests[1].DeleteRequest
+	if del2 == nil {
+		t.Fatal("expected DeleteRequest, got nil")
+	}
+	gotPK2 := del2.Key["PK"].(*dynamodbtypes.AttributeValueMemberS).Value
+	gotSK2 := del2.Key["SK"].(*dynamodbtypes.AttributeValueMemberS).Value
+	if gotPK2 != matchPK2 || gotSK2 != matchSK2 {
+		t.Errorf("delete[1] PK=%q SK=%q, want PK=%q SK=%q", gotPK2, gotSK2, matchPK2, matchSK2)
+	}
+}
+
+func TestDynamoDBState_DeleteByPrefix_NoMatches(t *testing.T) {
+	t.Parallel()
+
+	batchCalled := false
+	mock := &mockDynamoDBAPI{
+		ScanFn: func(_ context.Context, _ *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
+			return &dynamodb.ScanOutput{Items: []map[string]dynamodbtypes.AttributeValue{}}, nil
+		},
+		BatchWriteItemFn: func(_ context.Context, _ *dynamodb.BatchWriteItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error) {
+			batchCalled = true
+			return &dynamodb.BatchWriteItemOutput{}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	err := store.DeleteByPrefix(context.Background(), "SENSOR#nonexistent")
+	if err != nil {
+		t.Fatalf("DeleteByPrefix() error = %v", err)
+	}
+	if batchCalled {
+		t.Error("BatchWriteItem should not be called when scan returns no items")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// WriteRerun / CountReruns
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBState_WriteRerun_CountReruns(t *testing.T) {
+	t.Parallel()
+
+	var capturedPuts []*dynamodb.PutItemInput
+	mock := &mockDynamoDBAPI{
+		PutItemFn: func(_ context.Context, params *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
+			capturedPuts = append(capturedPuts, params)
+			return &dynamodb.PutItemOutput{}, nil
+		},
+		QueryFn: func(_ context.Context, params *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+			// Verify the query parameters
+			wantPK := chaosaws.RerunPK("etl-pipeline")
+			gotPK := params.ExpressionAttributeValues[":pk"].(*dynamodbtypes.AttributeValueMemberS).Value
+			if gotPK != wantPK {
+				t.Errorf("Query PK = %q, want %q", gotPK, wantPK)
+			}
+			// Return 2 items to simulate 2 reruns written
+			return &dynamodb.QueryOutput{
+				Count: 2,
+				Items: []map[string]dynamodbtypes.AttributeValue{
+					{"PK": &dynamodbtypes.AttributeValueMemberS{Value: wantPK}},
+					{"PK": &dynamodbtypes.AttributeValueMemberS{Value: wantPK}},
+				},
+			}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+
+	// Write 2 reruns
+	err := store.WriteRerun(context.Background(), "etl-pipeline", "daily", "2026-03-14", "data-quality-issue")
+	if err != nil {
+		t.Fatalf("WriteRerun() error = %v", err)
+	}
+	err = store.WriteRerun(context.Background(), "etl-pipeline", "daily", "2026-03-14", "upstream-delay")
+	if err != nil {
+		t.Fatalf("WriteRerun() error = %v", err)
+	}
+
+	if len(capturedPuts) != 2 {
+		t.Fatalf("expected 2 PutItem calls, got %d", len(capturedPuts))
+	}
+
+	// Verify PK/SK on first write
+	wantPK := chaosaws.RerunPK("etl-pipeline")
+	if got := capturedPuts[0].Item["PK"].(*dynamodbtypes.AttributeValueMemberS).Value; got != wantPK {
+		t.Errorf("WriteRerun PK = %q, want %q", got, wantPK)
+	}
+	if got := capturedPuts[0].Item["reason"].(*dynamodbtypes.AttributeValueMemberS).Value; got != "data-quality-issue" {
+		t.Errorf("WriteRerun reason = %q, want %q", got, "data-quality-issue")
+	}
+
+	// Count reruns
+	count, err := store.CountReruns(context.Background(), "etl-pipeline", "daily", "2026-03-14")
+	if err != nil {
+		t.Fatalf("CountReruns() error = %v", err)
+	}
+	if count != 2 {
+		t.Errorf("CountReruns() = %d, want 2", count)
+	}
+}
+
+func TestDynamoDBState_CountReruns_Zero(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockDynamoDBAPI{
+		QueryFn: func(_ context.Context, _ *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{
+				Count: 0,
+				Items: []map[string]dynamodbtypes.AttributeValue{},
+			}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	count, err := store.CountReruns(context.Background(), "etl-pipeline", "daily", "2026-01-01")
+	if err != nil {
+		t.Fatalf("CountReruns() error = %v", err)
+	}
+	if count != 0 {
+		t.Errorf("CountReruns() = %d, want 0", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ReadJobEvents
+// ---------------------------------------------------------------------------
+
+func TestDynamoDBState_ReadJobEvents(t *testing.T) {
+	t.Parallel()
+
+	ts1 := time.Date(2026, 3, 14, 15, 30, 0, 0, time.UTC)
+	ts2 := time.Date(2026, 3, 14, 15, 35, 0, 0, time.UTC)
+
+	mock := &mockDynamoDBAPI{
+		QueryFn: func(_ context.Context, params *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+			// Verify query uses correct PK and SK prefix
+			wantPK := chaosaws.JobEventPK("etl-pipeline")
+			gotPK := params.ExpressionAttributeValues[":pk"].(*dynamodbtypes.AttributeValueMemberS).Value
+			if gotPK != wantPK {
+				t.Errorf("Query PK = %q, want %q", gotPK, wantPK)
+			}
+
+			// Verify ScanIndexForward is false (DESC order)
+			if params.ScanIndexForward == nil || *params.ScanIndexForward != false {
+				t.Error("expected ScanIndexForward=false for DESC order")
+			}
+
+			// Return events in DESC order (newest first)
+			return &dynamodb.QueryOutput{
+				Items: []map[string]dynamodbtypes.AttributeValue{
+					{
+						"pipeline":  &dynamodbtypes.AttributeValueMemberS{Value: "etl-pipeline"},
+						"schedule":  &dynamodbtypes.AttributeValueMemberS{Value: "daily"},
+						"date":      &dynamodbtypes.AttributeValueMemberS{Value: "2026-03-14"},
+						"event":     &dynamodbtypes.AttributeValueMemberS{Value: "completed"},
+						"run_id":    &dynamodbtypes.AttributeValueMemberS{Value: "run-002"},
+						"timestamp": &dynamodbtypes.AttributeValueMemberS{Value: ts2.Format(time.RFC3339Nano)},
+					},
+					{
+						"pipeline":  &dynamodbtypes.AttributeValueMemberS{Value: "etl-pipeline"},
+						"schedule":  &dynamodbtypes.AttributeValueMemberS{Value: "daily"},
+						"date":      &dynamodbtypes.AttributeValueMemberS{Value: "2026-03-14"},
+						"event":     &dynamodbtypes.AttributeValueMemberS{Value: "started"},
+						"run_id":    &dynamodbtypes.AttributeValueMemberS{Value: "run-001"},
+						"timestamp": &dynamodbtypes.AttributeValueMemberS{Value: ts1.Format(time.RFC3339Nano)},
+					},
+				},
+			}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	events, err := store.ReadJobEvents(context.Background(), "etl-pipeline", "daily", "2026-03-14")
+	if err != nil {
+		t.Fatalf("ReadJobEvents() error = %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("ReadJobEvents() returned %d events, want 2", len(events))
+	}
+
+	// Verify DESC order (newest first)
+	if events[0].Event != "completed" {
+		t.Errorf("events[0].Event = %q, want %q", events[0].Event, "completed")
+	}
+	if events[0].RunID != "run-002" {
+		t.Errorf("events[0].RunID = %q, want %q", events[0].RunID, "run-002")
+	}
+	if !events[0].Timestamp.Equal(ts2) {
+		t.Errorf("events[0].Timestamp = %v, want %v", events[0].Timestamp, ts2)
+	}
+
+	if events[1].Event != "started" {
+		t.Errorf("events[1].Event = %q, want %q", events[1].Event, "started")
+	}
+	if events[1].RunID != "run-001" {
+		t.Errorf("events[1].RunID = %q, want %q", events[1].RunID, "run-001")
+	}
+	if events[1].Pipeline != "etl-pipeline" {
+		t.Errorf("events[1].Pipeline = %q, want %q", events[1].Pipeline, "etl-pipeline")
+	}
+	if events[1].Schedule != "daily" {
+		t.Errorf("events[1].Schedule = %q, want %q", events[1].Schedule, "daily")
+	}
+	if events[1].Date != "2026-03-14" {
+		t.Errorf("events[1].Date = %q, want %q", events[1].Date, "2026-03-14")
+	}
+}
+
+func TestDynamoDBState_ReadJobEvents_Empty(t *testing.T) {
+	t.Parallel()
+
+	mock := &mockDynamoDBAPI{
+		QueryFn: func(_ context.Context, _ *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+			return &dynamodb.QueryOutput{
+				Items: []map[string]dynamodbtypes.AttributeValue{},
+			}, nil
+		},
+	}
+
+	store := chaosaws.NewDynamoDBState(mock, testTable)
+	events, err := store.ReadJobEvents(context.Background(), "etl-pipeline", "daily", "2026-01-01")
+	if err != nil {
+		t.Fatalf("ReadJobEvents() error = %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("ReadJobEvents() returned %d events, want 0", len(events))
+	}
+}

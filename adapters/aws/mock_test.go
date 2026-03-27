@@ -59,10 +59,12 @@ func (m *mockS3API) CopyObject(ctx context.Context, params *s3.CopyObjectInput, 
 
 // mockDynamoDBAPI implements chaosaws.DynamoDBAPI with optional function fields.
 type mockDynamoDBAPI struct {
-	GetItemFn    func(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
-	PutItemFn    func(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
-	DeleteItemFn func(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
-	QueryFn      func(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	GetItemFn        func(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
+	PutItemFn        func(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	DeleteItemFn     func(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error)
+	QueryFn          func(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	ScanFn           func(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error)
+	BatchWriteItemFn func(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
 }
 
 func (m *mockDynamoDBAPI) GetItem(ctx context.Context, params *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
@@ -91,6 +93,20 @@ func (m *mockDynamoDBAPI) Query(ctx context.Context, params *dynamodb.QueryInput
 		return m.QueryFn(ctx, params, optFns...)
 	}
 	return &dynamodb.QueryOutput{}, nil
+}
+
+func (m *mockDynamoDBAPI) Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
+	if m.ScanFn != nil {
+		return m.ScanFn(ctx, params, optFns...)
+	}
+	return &dynamodb.ScanOutput{}, nil
+}
+
+func (m *mockDynamoDBAPI) BatchWriteItem(ctx context.Context, params *dynamodb.BatchWriteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error) {
+	if m.BatchWriteItemFn != nil {
+		return m.BatchWriteItemFn(ctx, params, optFns...)
+	}
+	return &dynamodb.BatchWriteItemOutput{}, nil
 }
 
 // noopTransport is a no-op adapter.DataTransport for testing components

@@ -202,33 +202,219 @@ func (s *DynamoDBState) ReadChaosEvents(ctx context.Context, experimentID string
 }
 
 // WritePipelineConfig stores a pipeline configuration blob.
-func (s *DynamoDBState) WritePipelineConfig(_ context.Context, _ string, _ []byte) error {
-	return fmt.Errorf("WritePipelineConfig: not yet implemented")
+func (s *DynamoDBState) WritePipelineConfig(ctx context.Context, pipeline string, config []byte) error {
+	_, err := s.api.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: &s.tableName,
+		Item: map[string]dynamodbtypes.AttributeValue{
+			"PK":     &dynamodbtypes.AttributeValueMemberS{Value: ConfigPK(pipeline)},
+			"SK":     &dynamodbtypes.AttributeValueMemberS{Value: ConfigSK()},
+			"config": &dynamodbtypes.AttributeValueMemberS{Value: string(config)},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("dynamodb write pipeline config: %w", err)
+	}
+	return nil
 }
 
 // ReadPipelineConfig retrieves a pipeline configuration blob.
-func (s *DynamoDBState) ReadPipelineConfig(_ context.Context, _ string) ([]byte, error) {
-	return nil, fmt.Errorf("ReadPipelineConfig: not yet implemented")
+// If the item does not exist, nil is returned (no error).
+func (s *DynamoDBState) ReadPipelineConfig(ctx context.Context, pipeline string) ([]byte, error) {
+	out, err := s.api.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: &s.tableName,
+		Key: map[string]dynamodbtypes.AttributeValue{
+			"PK": &dynamodbtypes.AttributeValueMemberS{Value: ConfigPK(pipeline)},
+			"SK": &dynamodbtypes.AttributeValueMemberS{Value: ConfigSK()},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb read pipeline config: %w", err)
+	}
+
+	if len(out.Item) == 0 {
+		return nil, nil
+	}
+
+	attr, ok := out.Item["config"]
+	if !ok {
+		return nil, nil
+	}
+	sv, ok := attr.(*dynamodbtypes.AttributeValueMemberS)
+	if !ok {
+		return nil, nil
+	}
+	return []byte(sv.Value), nil
 }
 
-// DeleteByPrefix removes all state entries matching the given prefix.
-func (s *DynamoDBState) DeleteByPrefix(_ context.Context, _ string) error {
-	return fmt.Errorf("DeleteByPrefix: not yet implemented")
+// DeleteByPrefix removes all state entries whose PK begins with the given prefix.
+// It performs a Scan with a filter expression, then deletes matches in batches of 25.
+func (s *DynamoDBState) DeleteByPrefix(ctx context.Context, prefix string) error {
+	filterExpr := "begins_with(PK, :prefix)"
+	projExpr := "PK, SK"
+	input := &dynamodb.ScanInput{
+		TableName:        &s.tableName,
+		FilterExpression: &filterExpr,
+		ProjectionExpression: &projExpr,
+		ExpressionAttributeValues: map[string]dynamodbtypes.AttributeValue{
+			":prefix": &dynamodbtypes.AttributeValueMemberS{Value: prefix},
+		},
+	}
+
+	out, err := s.api.Scan(ctx, input)
+	if err != nil {
+		return fmt.Errorf("dynamodb delete by prefix scan: %w", err)
+	}
+
+	if len(out.Items) == 0 {
+		return nil
+	}
+
+	// Delete in batches of 25 (DynamoDB BatchWriteItem limit).
+	const batchSize = 25
+	for i := 0; i < len(out.Items); i += batchSize {
+		end := i + batchSize
+		if end > len(out.Items) {
+			end = len(out.Items)
+		}
+		batch := out.Items[i:end]
+
+		requests := make([]dynamodbtypes.WriteRequest, 0, len(batch))
+		for _, item := range batch {
+			requests = append(requests, dynamodbtypes.WriteRequest{
+				DeleteRequest: &dynamodbtypes.DeleteRequest{
+					Key: map[string]dynamodbtypes.AttributeValue{
+						"PK": item["PK"],
+						"SK": item["SK"],
+					},
+				},
+			})
+		}
+
+		_, err := s.api.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+			RequestItems: map[string][]dynamodbtypes.WriteRequest{
+				s.tableName: requests,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("dynamodb delete by prefix batch: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // CountReruns returns the number of reruns for a pipeline/schedule/date.
-func (s *DynamoDBState) CountReruns(_ context.Context, _, _, _ string) (int, error) {
-	return 0, fmt.Errorf("CountReruns: not yet implemented")
+func (s *DynamoDBState) CountReruns(ctx context.Context, pipeline, schedule, date string) (int, error) {
+	pk := RerunPK(pipeline)
+	skPrefix := RerunSKPrefix(schedule, date)
+	expr := "PK = :pk AND begins_with(SK, :sk)"
+	selectCount := dynamodbtypes.SelectCount
+	out, err := s.api.Query(ctx, &dynamodb.QueryInput{
+		TableName:              &s.tableName,
+		KeyConditionExpression: &expr,
+		Select:                 selectCount,
+		ExpressionAttributeValues: map[string]dynamodbtypes.AttributeValue{
+			":pk": &dynamodbtypes.AttributeValueMemberS{Value: pk},
+			":sk": &dynamodbtypes.AttributeValueMemberS{Value: skPrefix},
+		},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("dynamodb count reruns: %w", err)
+	}
+	return int(out.Count), nil
 }
 
-// WriteRerun records a rerun event.
-func (s *DynamoDBState) WriteRerun(_ context.Context, _, _, _, _ string) error {
-	return fmt.Errorf("WriteRerun: not yet implemented")
+// WriteRerun records a rerun event with a unique timestamp.
+func (s *DynamoDBState) WriteRerun(ctx context.Context, pipeline, schedule, date, reason string) error {
+	ts := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.api.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: &s.tableName,
+		Item: map[string]dynamodbtypes.AttributeValue{
+			"PK":       &dynamodbtypes.AttributeValueMemberS{Value: RerunPK(pipeline)},
+			"SK":       &dynamodbtypes.AttributeValueMemberS{Value: RerunSK(schedule, date, ts)},
+			"pipeline": &dynamodbtypes.AttributeValueMemberS{Value: pipeline},
+			"schedule": &dynamodbtypes.AttributeValueMemberS{Value: schedule},
+			"date":     &dynamodbtypes.AttributeValueMemberS{Value: date},
+			"reason":   &dynamodbtypes.AttributeValueMemberS{Value: reason},
+			"timestamp": &dynamodbtypes.AttributeValueMemberS{Value: ts},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("dynamodb write rerun: %w", err)
+	}
+	return nil
 }
 
-// ReadJobEvents returns job events for a pipeline/schedule/date.
-func (s *DynamoDBState) ReadJobEvents(_ context.Context, _, _, _ string) ([]adapter.JobEvent, error) {
-	return nil, fmt.Errorf("ReadJobEvents: not yet implemented")
+// ReadJobEvents returns job events for a pipeline/schedule/date in descending order.
+func (s *DynamoDBState) ReadJobEvents(ctx context.Context, pipeline, schedule, date string) ([]adapter.JobEvent, error) {
+	pk := JobEventPK(pipeline)
+	skPrefix := JobEventSKPrefix(schedule, date)
+	expr := "PK = :pk AND begins_with(SK, :sk)"
+	scanForward := false
+	out, err := s.api.Query(ctx, &dynamodb.QueryInput{
+		TableName:              &s.tableName,
+		KeyConditionExpression: &expr,
+		ScanIndexForward:       &scanForward,
+		ExpressionAttributeValues: map[string]dynamodbtypes.AttributeValue{
+			":pk": &dynamodbtypes.AttributeValueMemberS{Value: pk},
+			":sk": &dynamodbtypes.AttributeValueMemberS{Value: skPrefix},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamodb read job events: %w", err)
+	}
+
+	events := make([]adapter.JobEvent, 0, len(out.Items))
+	for _, item := range out.Items {
+		event, err := unmarshalJobEvent(item)
+		if err != nil {
+			return nil, fmt.Errorf("dynamodb read job events: %w", err)
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
+// unmarshalJobEvent converts a DynamoDB item map to an adapter.JobEvent.
+func unmarshalJobEvent(item map[string]dynamodbtypes.AttributeValue) (adapter.JobEvent, error) {
+	var event adapter.JobEvent
+
+	if v, ok := item["pipeline"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Pipeline = sv.Value
+		}
+	}
+	if v, ok := item["schedule"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Schedule = sv.Value
+		}
+	}
+	if v, ok := item["date"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Date = sv.Value
+		}
+	}
+	if v, ok := item["event"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.Event = sv.Value
+		}
+	}
+	if v, ok := item["run_id"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			event.RunID = sv.Value
+		}
+	}
+	if v, ok := item["timestamp"]; ok {
+		if sv, ok := v.(*dynamodbtypes.AttributeValueMemberS); ok {
+			t, err := time.Parse(time.RFC3339Nano, sv.Value)
+			if err != nil {
+				return adapter.JobEvent{}, fmt.Errorf("parse timestamp: %w", err)
+			}
+			event.Timestamp = t
+		}
+	}
+
+	return event, nil
 }
 
 // unmarshalSensorData converts a DynamoDB item map to an adapter.SensorData.
