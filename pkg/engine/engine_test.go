@@ -1620,6 +1620,24 @@ func TestEngine_ProcessObject_UsesClockForTimestamps(t *testing.T) {
 	}
 }
 
+func TestProbabilistic_UsesInjectedClock(t *testing.T) {
+	t.Parallel()
+	frozen := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	clk := adapter.NewTestClock(frozen)
+
+	eng := engine.New(
+		types.EngineConfig{Mode: "probabilistic"},
+		&mockTransport{},
+		mutation.NewRegistry(),
+		nil,
+		engine.WithClock(clk),
+	)
+
+	if !eng.Clock().Now().Equal(frozen) {
+		t.Errorf("engine clock = %v, want %v", eng.Clock().Now(), frozen)
+	}
+}
+
 func TestEngine_DefaultClockIsWallClock(t *testing.T) {
 	t.Parallel()
 

@@ -32,6 +32,9 @@ type Experiment struct {
 	// resolver is an optional DependencyResolver used by BlastRadius().
 	// It is set by StartExperiment when the engine has a resolver configured.
 	resolver adapter.DependencyResolver
+
+	// clock is the time source used for timestamps (injected from the engine).
+	clock adapter.Clock
 }
 
 // State returns the current experiment state in a thread-safe manner.
@@ -79,7 +82,7 @@ func (exp *Experiment) Stop() {
 	exp.mu.Lock()
 	if exp.state == types.ExperimentRunning {
 		exp.state = types.ExperimentAborted
-		exp.endTime = time.Now()
+		exp.endTime = exp.clock.Now()
 	}
 	cancel := exp.cancel
 	exp.mu.Unlock()
@@ -198,9 +201,9 @@ func (exp *Experiment) BlastRadius(ctx context.Context) []types.BlastRadiusEntry
 
 // generateExperimentID creates a unique experiment identifier using
 // timestamp and random components.
-func generateExperimentID() string {
+func generateExperimentID(clk adapter.Clock) string {
 	return fmt.Sprintf("exp-%d-%04x",
-		time.Now().UnixNano(),
+		clk.Now().UnixNano(),
 		rand.Intn(0xFFFF), //nolint:gosec // not security-sensitive
 	)
 }
@@ -212,7 +215,7 @@ func (e *Engine) StartExperiment(ctx context.Context, config types.ExperimentCon
 		return nil, fmt.Errorf("start experiment: %w", err)
 	}
 
-	expID := generateExperimentID()
+	expID := generateExperimentID(e.clock)
 
 	// Create a context with timeout from the experiment duration.
 	var expCtx context.Context
@@ -228,10 +231,11 @@ func (e *Engine) StartExperiment(ctx context.Context, config types.ExperimentCon
 		ID:        expID,
 		config:    config,
 		state:     types.ExperimentRunning,
-		startTime: time.Now(),
+		startTime: e.clock.Now(),
 		cancel:    cancel,
 		done:      make(chan struct{}),
 		resolver:  e.resolver,
+		clock:     e.clock,
 	}
 
 	// Create an intercepting emitter that collects events for the experiment.
@@ -247,6 +251,7 @@ func (e *Engine) StartExperiment(ctx context.Context, config types.ExperimentCon
 		e.mutations,
 		e.scenarios,
 		WithEmitter(collector),
+		WithClock(e.clock),
 	)
 	if e.safety != nil {
 		eng.safety = e.safety
@@ -264,7 +269,7 @@ func (e *Engine) StartExperiment(ctx context.Context, config types.ExperimentCon
 		// Only transition to Completed if not already Aborted.
 		if exp.state == types.ExperimentRunning {
 			exp.state = types.ExperimentCompleted
-			exp.endTime = time.Now()
+			exp.endTime = exp.clock.Now()
 		}
 		exp.mu.Unlock()
 

@@ -113,7 +113,7 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 						Params:    sc.Mutation.Params,
 						Applied:   false,
 						Error:     fmt.Sprintf("scenario %q: cooldown: %v", sc.Name, cdErr),
-						Timestamp: time.Now(),
+						Timestamp: e.clock.Now(),
 					})
 					continue
 				}
@@ -129,7 +129,7 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 					Params:    sc.Mutation.Params,
 					Applied:   false,
 					Error:     fmt.Sprintf("scenario %q: %v", sc.Name, err),
-					Timestamp: time.Now(),
+					Timestamp: e.clock.Now(),
 				})
 				continue
 			}
@@ -146,7 +146,7 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 					Params:    sc.Mutation.Params,
 					Applied:   false,
 					Error:     fmt.Sprintf("scenario %q: apply %q: %v", sc.Name, sc.Mutation.Type, err),
-					Timestamp: time.Now(),
+					Timestamp: e.clock.Now(),
 				})
 				continue
 			}
@@ -155,7 +155,7 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 
 			// Emit a ChaosEvent only for successfully applied mutations.
 			if e.emitter != nil {
-				now := time.Now()
+				now := e.clock.Now()
 				event := types.ChaosEvent{
 					ID:        fmt.Sprintf("%s-%s-%d", sc.Name, obj.Key, now.UnixNano()),
 					Scenario:  sc.Name,
@@ -181,7 +181,7 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 						Params:    sc.Mutation.Params,
 						Applied:   false,
 						Error:     fmt.Sprintf("scenario %q: record injection: %v", sc.Name, riErr),
-						Timestamp: time.Now(),
+						Timestamp: e.clock.Now(),
 					})
 					continue
 				}
