@@ -1577,6 +1577,49 @@ func TestEngine_UsesInjectedClock(t *testing.T) {
 	}
 }
 
+func TestEngine_ProcessObject_UsesClockForTimestamps(t *testing.T) {
+	t.Parallel()
+	frozen := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	clk := adapter.NewTestClock(frozen)
+
+	reg := mutation.NewRegistry()
+	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	sc := scenario.Scenario{
+		Name: "test-sc", Category: "data-arrival", Severity: types.SeverityLow,
+		Version: 1, Target: scenario.TargetSpec{Layer: "data"},
+		Mutation: scenario.MutationSpec{Type: "delay", Params: map[string]string{"duration": "10m", "release": "true"}},
+		Probability: 1.0, Safety: scenario.ScenarioSafety{MaxAffectedPct: 100},
+	}
+
+	emitter := &mockEmitter{}
+	eng := engine.New(
+		types.EngineConfig{Mode: "deterministic", DryRun: true},
+		&mockTransport{},
+		reg,
+		[]scenario.Scenario{sc},
+		engine.WithClock(clk),
+		engine.WithEmitter(emitter),
+	)
+
+	records, err := eng.ProcessObject(context.Background(), types.DataObject{Key: "test.jsonl"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(records) == 0 {
+		t.Fatal("expected at least one record")
+	}
+	if !records[0].Timestamp.Equal(frozen) {
+		t.Errorf("record timestamp = %v, want %v", records[0].Timestamp, frozen)
+	}
+	events := emitter.getEvents()
+	if len(events) > 0 && !events[0].Timestamp.Equal(frozen) {
+		t.Errorf("event timestamp = %v, want %v", events[0].Timestamp, frozen)
+	}
+}
+
 func TestEngine_DefaultClockIsWallClock(t *testing.T) {
 	t.Parallel()
 

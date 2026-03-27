@@ -183,7 +183,7 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 				Params:    sc.Mutation.Params,
 				Applied:   false,
 				Error:     "dry-run",
-				Timestamp: time.Now(),
+				Timestamp: e.clock.Now(),
 			}
 		} else {
 			var applyErr error
@@ -198,7 +198,7 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 
 		// Emit a ChaosEvent.
 		if e.emitter != nil {
-			now := time.Now()
+			now := e.clock.Now()
 			event := types.ChaosEvent{
 				ID:        fmt.Sprintf("%s-%s-%d", sc.Name, obj.Key, now.UnixNano()),
 				Scenario:  sc.Name,
@@ -304,7 +304,7 @@ func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Sc
 				ok, err := e.evaluateOne(ctx, p.assertion, dataAsserter)
 				if ok && err == nil {
 					results[p.idx].Satisfied = true
-					results[p.idx].EvalAt = time.Now()
+					results[p.idx].EvalAt = e.clock.Now()
 				} else {
 					if err != nil {
 						results[p.idx].Error = err.Error()
@@ -423,7 +423,7 @@ func (e *Engine) Run(ctx context.Context) ([]types.MutationRecord, error) {
 		if len(appliedScenarios) > 0 {
 			assertResults := e.EvaluateAssertions(ctx, appliedScenarios)
 			if len(assertResults) > 0 && e.emitter != nil {
-				now := time.Now()
+				now := e.clock.Now()
 				var names []string
 				for _, sc := range appliedScenarios {
 					names = append(names, sc.Name)
@@ -455,7 +455,7 @@ func (e *Engine) Run(ctx context.Context) ([]types.MutationRecord, error) {
 			}
 		}
 		if len(assertResults) > 0 && e.emitter != nil {
-			now := time.Now()
+			now := e.clock.Now()
 			event := types.ChaosEvent{
 				ID:         fmt.Sprintf("assert-%d", now.UnixNano()),
 				Scenario:   strings.Join(names, ","),
