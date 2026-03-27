@@ -236,6 +236,61 @@ func TestLoadFromBytes_EmptyBytes(t *testing.T) {
 	}
 }
 
+func TestBuildAsserter_AirflowV2_ReturnsAsserter(t *testing.T) {
+	t.Parallel()
+	yaml := `
+adapters:
+  airflow:
+    url: "http://localhost:8080"
+    version: "v2"
+    username: "admin"
+    password: "admin"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	asserter, err := cfg.BuildAsserter()
+	if err != nil {
+		t.Fatalf("BuildAsserter() error = %v", err)
+	}
+	if asserter == nil {
+		t.Fatal("expected non-nil asserter for v2")
+	}
+}
+
+func TestBuildAsserter_AirflowDefaultVersion_UsesV1(t *testing.T) {
+	t.Parallel()
+	yaml := `
+adapters:
+  airflow:
+    url: "http://localhost:8080/api/v1"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	asserter, err := cfg.BuildAsserter()
+	if err != nil {
+		t.Fatalf("BuildAsserter() error = %v", err)
+	}
+	if asserter == nil {
+		t.Fatal("expected non-nil asserter")
+	}
+}
+
+func TestBuildAsserter_AirflowV2_NoCredentials_Error(t *testing.T) {
+	t.Parallel()
+	yaml := `
+adapters:
+  airflow:
+    url: "http://localhost:8080"
+    version: "v2"
+`
+	path := writeTempFile(t, yaml)
+	cfg, _ := config.Load(path)
+	_, err := cfg.BuildAsserter()
+	if err == nil {
+		t.Fatal("expected error for v2 without credentials")
+	}
+}
+
 func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

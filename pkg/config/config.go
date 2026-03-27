@@ -31,8 +31,11 @@ type DagsterAdapterConfig struct {
 
 // AirflowAdapterConfig maps 1:1 to airflow.Config with YAML tags.
 type AirflowAdapterConfig struct {
-	URL     string            `yaml:"url"`
-	Headers map[string]string `yaml:"headers"`
+	URL      string            `yaml:"url"`
+	Headers  map[string]string `yaml:"headers"`
+	Version  string            `yaml:"version"`
+	Username string            `yaml:"username"`
+	Password string            `yaml:"password"`
 }
 
 // LoadFromBytes parses raw YAML bytes into a Config.
@@ -81,14 +84,22 @@ func (c Config) BuildAsserter() (adapter.Asserter, error) {
 
 	if c.Adapters.Airflow.URL != "" {
 		cfg := airflow.Config{
-			URL:     c.Adapters.Airflow.URL,
-			Headers: c.Adapters.Airflow.Headers,
+			URL:      c.Adapters.Airflow.URL,
+			Headers:  c.Adapters.Airflow.Headers,
+			Version:  c.Adapters.Airflow.Version,
+			Username: c.Adapters.Airflow.Username,
+			Password: c.Adapters.Airflow.Password,
 		}
 		cfg.Defaults()
 		if err := cfg.Validate(); err != nil {
 			return nil, fmt.Errorf("config: airflow: %w", err)
 		}
-		client := airflow.NewRESTClient(cfg)
+		var client airflow.AirflowAPI
+		if cfg.Version == "v2" {
+			client = airflow.NewRESTClientV2(cfg)
+		} else {
+			client = airflow.NewRESTClient(cfg)
+		}
 		return airflow.NewAirflowAsserter(client), nil
 	}
 
