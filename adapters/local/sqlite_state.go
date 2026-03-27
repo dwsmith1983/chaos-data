@@ -260,3 +260,33 @@ func (s *SQLiteState) ReadChaosEvents(ctx context.Context, experimentID string) 
 
 	return events, nil
 }
+
+// WritePipelineConfig stores a pipeline configuration blob.
+func (s *SQLiteState) WritePipelineConfig(_ context.Context, _ string, _ []byte) error {
+	return fmt.Errorf("WritePipelineConfig: not yet implemented")
+}
+
+// ReadPipelineConfig retrieves a pipeline configuration blob.
+func (s *SQLiteState) ReadPipelineConfig(_ context.Context, _ string) ([]byte, error) {
+	return nil, fmt.Errorf("ReadPipelineConfig: not yet implemented")
+}
+
+// DeleteByPrefix removes all state entries matching the given prefix.
+func (s *SQLiteState) DeleteByPrefix(_ context.Context, _ string) error {
+	return fmt.Errorf("DeleteByPrefix: not yet implemented")
+}
+
+// CountReruns returns the number of reruns for a pipeline/schedule/date.
+func (s *SQLiteState) CountReruns(_ context.Context, _, _, _ string) (int, error) {
+	return 0, fmt.Errorf("CountReruns: not yet implemented")
+}
+
+// WriteRerun records a rerun event.
+func (s *SQLiteState) WriteRerun(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("WriteRerun: not yet implemented")
+}
+
+// ReadJobEvents returns job events for a pipeline/schedule/date.
+func (s *SQLiteState) ReadJobEvents(_ context.Context, _, _, _ string) ([]adapter.JobEvent, error) {
+	return nil, fmt.Errorf("ReadJobEvents: not yet implemented")
+}

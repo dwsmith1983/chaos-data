@@ -253,6 +253,26 @@ func (m *mockStateStore) ReadChaosEvents(_ context.Context, _ string) ([]types.C
 	return result, nil
 }
 
+func (m *mockStateStore) WritePipelineConfig(_ context.Context, _ string, _ []byte) error {
+	return nil
+}
+
+func (m *mockStateStore) ReadPipelineConfig(_ context.Context, _ string) ([]byte, error) {
+	return nil, nil
+}
+
+func (m *mockStateStore) DeleteByPrefix(_ context.Context, _ string) error { return nil }
+
+func (m *mockStateStore) CountReruns(_ context.Context, _, _, _ string) (int, error) {
+	return 0, nil
+}
+
+func (m *mockStateStore) WriteRerun(_ context.Context, _, _, _, _ string) error { return nil }
+
+func (m *mockStateStore) ReadJobEvents(_ context.Context, _, _, _ string) ([]adapter.JobEvent, error) {
+	return nil, nil
+}
+
 // mockEventEmitter implements adapter.EventEmitter and records calls.
 type mockEventEmitter struct {
 	mu    sync.Mutex

@@ -201,6 +201,36 @@ func (s *DynamoDBState) ReadChaosEvents(ctx context.Context, experimentID string
 	return events, nil
 }
 
+// WritePipelineConfig stores a pipeline configuration blob.
+func (s *DynamoDBState) WritePipelineConfig(_ context.Context, _ string, _ []byte) error {
+	return fmt.Errorf("WritePipelineConfig: not yet implemented")
+}
+
+// ReadPipelineConfig retrieves a pipeline configuration blob.
+func (s *DynamoDBState) ReadPipelineConfig(_ context.Context, _ string) ([]byte, error) {
+	return nil, fmt.Errorf("ReadPipelineConfig: not yet implemented")
+}
+
+// DeleteByPrefix removes all state entries matching the given prefix.
+func (s *DynamoDBState) DeleteByPrefix(_ context.Context, _ string) error {
+	return fmt.Errorf("DeleteByPrefix: not yet implemented")
+}
+
+// CountReruns returns the number of reruns for a pipeline/schedule/date.
+func (s *DynamoDBState) CountReruns(_ context.Context, _, _, _ string) (int, error) {
+	return 0, fmt.Errorf("CountReruns: not yet implemented")
+}
+
+// WriteRerun records a rerun event.
+func (s *DynamoDBState) WriteRerun(_ context.Context, _, _, _, _ string) error {
+	return fmt.Errorf("WriteRerun: not yet implemented")
+}
+
+// ReadJobEvents returns job events for a pipeline/schedule/date.
+func (s *DynamoDBState) ReadJobEvents(_ context.Context, _, _, _ string) ([]adapter.JobEvent, error) {
+	return nil, fmt.Errorf("ReadJobEvents: not yet implemented")
+}
+
 // unmarshalSensorData converts a DynamoDB item map to an adapter.SensorData.
 func unmarshalSensorData(item map[string]dynamodbtypes.AttributeValue) (adapter.SensorData, error) {
 	var data adapter.SensorData

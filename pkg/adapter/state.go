@@ -16,6 +16,16 @@ type SensorData struct {
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
+// JobEvent represents a job execution event.
+type JobEvent struct {
+	Pipeline  string    `json:"pipeline"`
+	Schedule  string    `json:"schedule"`
+	Date      string    `json:"date"`
+	Event     string    `json:"event"`
+	RunID     string    `json:"run_id"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // TriggerKey identifies a specific trigger evaluation by pipeline, schedule,
 // and date.
 type TriggerKey struct {
@@ -33,4 +43,10 @@ type StateStore interface {
 	WriteTriggerStatus(ctx context.Context, key TriggerKey, status string) error
 	WriteEvent(ctx context.Context, event types.ChaosEvent) error
 	ReadChaosEvents(ctx context.Context, experimentID string) ([]types.ChaosEvent, error)
+	WritePipelineConfig(ctx context.Context, pipeline string, config []byte) error
+	ReadPipelineConfig(ctx context.Context, pipeline string) ([]byte, error)
+	DeleteByPrefix(ctx context.Context, prefix string) error
+	CountReruns(ctx context.Context, pipeline, schedule, date string) (int, error)
+	WriteRerun(ctx context.Context, pipeline, schedule, date, reason string) error
+	ReadJobEvents(ctx context.Context, pipeline, schedule, date string) ([]JobEvent, error)
 }
