@@ -24,7 +24,8 @@ func NewAdapterAsserter(store adapter.StateStore, reader adapter.EventReader) *A
 // Supports reports whether this asserter handles the given assertion type.
 func (a *AdapterAsserter) Supports(at types.AssertionType) bool {
 	switch at {
-	case types.AssertSensorState, types.AssertTriggerState, types.AssertEventEmitted:
+	case types.AssertSensorState, types.AssertTriggerState, types.AssertEventEmitted,
+		types.AssertInterlockEvent, types.AssertJobState, types.AssertRerunState:
 		return true
 	default:
 		return false
@@ -40,6 +41,12 @@ func (a *AdapterAsserter) Evaluate(ctx context.Context, assertion types.Assertio
 		return a.evalTrigger(ctx, assertion)
 	case types.AssertEventEmitted:
 		return a.evalEvent(ctx, assertion)
+	case types.AssertInterlockEvent:
+		return a.evalInterlockEvent(ctx, assertion)
+	case types.AssertJobState:
+		return a.evalJobState(ctx, assertion)
+	case types.AssertRerunState:
+		return a.evalRerunState(ctx, assertion)
 	default:
 		return false, fmt.Errorf("unsupported assertion type: %q", assertion.Type)
 	}
@@ -60,6 +67,18 @@ func (a *AdapterAsserter) ValidateTarget(assertion types.Assertion) error {
 	case types.AssertEventEmitted:
 		if strings.Count(assertion.Target, "/") != 1 {
 			return fmt.Errorf("event_emitted target %q: expected scenario/mutation", assertion.Target)
+		}
+	case types.AssertInterlockEvent:
+		if assertion.Target == "" {
+			return fmt.Errorf("interlock_event target must not be empty")
+		}
+	case types.AssertJobState:
+		if strings.Count(assertion.Target, "/") != 2 {
+			return fmt.Errorf("job_state target %q: expected pipeline/schedule/date", assertion.Target)
+		}
+	case types.AssertRerunState:
+		if strings.Count(assertion.Target, "/") != 2 {
+			return fmt.Errorf("rerun_state target %q: expected pipeline/schedule/date", assertion.Target)
 		}
 	}
 	return nil
@@ -131,4 +150,27 @@ func (a *AdapterAsserter) evalEvent(ctx context.Context, assertion types.Asserti
 		}
 	}
 	return false, nil
+}
+
+func (a *AdapterAsserter) evalInterlockEvent(ctx context.Context, assertion types.Assertion) (bool, error) {
+	events, err := a.reader.Manifest(ctx)
+	if err != nil {
+		return false, fmt.Errorf("eval interlock_event %q: %w", assertion.Target, err)
+	}
+	for _, e := range events {
+		if e.Scenario == assertion.Target {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (a *AdapterAsserter) evalJobState(_ context.Context, _ types.Assertion) (bool, error) {
+	// TODO(phase3): implement when StateStore.ReadJobEvents is available
+	return false, fmt.Errorf("job_state assertions not yet implemented: awaiting StateStore extension")
+}
+
+func (a *AdapterAsserter) evalRerunState(_ context.Context, _ types.Assertion) (bool, error) {
+	// TODO(phase3): implement when StateStore.CountReruns is available
+	return false, fmt.Errorf("rerun_state assertions not yet implemented: awaiting StateStore extension")
 }

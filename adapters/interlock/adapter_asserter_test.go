@@ -29,7 +29,9 @@ func TestAdapterAsserter_Supports(t *testing.T) {
 		{types.AssertSensorState, true},
 		{types.AssertTriggerState, true},
 		{types.AssertEventEmitted, true},
-		{types.AssertJobState, false},
+		{types.AssertInterlockEvent, true},
+		{types.AssertJobState, true},
+		{types.AssertRerunState, true},
 		{types.AssertDataState, false},
 	}
 	for _, tt := range tests {
@@ -401,12 +403,45 @@ func TestAdapterAsserter_ValidateTarget(t *testing.T) {
 			a:       types.Assertion{Type: types.AssertEventEmitted, Target: "a/b/c"},
 			wantErr: true,
 		},
-		// unsupported types: ValidateTarget should return nil (not our concern)
+		// interlock_event: just non-empty
 		{
-			name:    "job_state not validated by interlock",
-			a:       types.Assertion{Type: types.AssertJobState, Target: "job-1"},
+			name:    "interlock_event valid non-empty",
+			a:       types.Assertion{Type: types.AssertInterlockEvent, Target: "POST_RUN_DRIFT"},
 			wantErr: false,
 		},
+		{
+			name:    "interlock_event invalid empty",
+			a:       types.Assertion{Type: types.AssertInterlockEvent, Target: ""},
+			wantErr: true,
+		},
+		// job_state: expects 3 segments (pipeline/schedule/date)
+		{
+			name:    "job_state valid 3 segments",
+			a:       types.Assertion{Type: types.AssertJobState, Target: "pipeline/schedule/2024-01-15"},
+			wantErr: false,
+		},
+		{
+			name:    "job_state invalid 1 segment",
+			a:       types.Assertion{Type: types.AssertJobState, Target: "job-1"},
+			wantErr: true,
+		},
+		{
+			name:    "job_state invalid 2 segments",
+			a:       types.Assertion{Type: types.AssertJobState, Target: "pipeline/schedule"},
+			wantErr: true,
+		},
+		// rerun_state: expects 3 segments (pipeline/schedule/date)
+		{
+			name:    "rerun_state valid 3 segments",
+			a:       types.Assertion{Type: types.AssertRerunState, Target: "pipeline/schedule/2024-01-15"},
+			wantErr: false,
+		},
+		{
+			name:    "rerun_state invalid 1 segment",
+			a:       types.Assertion{Type: types.AssertRerunState, Target: "no-slash"},
+			wantErr: true,
+		},
+		// unsupported types: ValidateTarget should return nil (not our concern)
 		{
 			name:    "data_state not validated by interlock",
 			a:       types.Assertion{Type: types.AssertDataState, Target: "file.jsonl"},
@@ -424,5 +459,122 @@ func TestAdapterAsserter_ValidateTarget(t *testing.T) {
 					tt.a.Type, tt.a.Target, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// --- Interlock Event assertion tests ---
+
+func TestAdapterAsserter_InterlockEvent_Exists_Found(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	reader := newMockEventReader()
+	reader.events = append(reader.events, types.ChaosEvent{
+		Scenario: "POST_RUN_DRIFT",
+		Mutation: "some-mutation",
+	})
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertInterlockEvent, Target: "POST_RUN_DRIFT", Condition: types.CondExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("expected interlock_event exists to be true")
+	}
+}
+
+func TestAdapterAsserter_InterlockEvent_Exists_NotFound(t *testing.T) {
+	t.Parallel()
+	aa := interlock.NewAdapterAsserter(newMockStateStore(), newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertInterlockEvent, Target: "POST_RUN_DRIFT", Condition: types.CondExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("expected interlock_event exists to be false (no matching event)")
+	}
+}
+
+func TestAdapterAsserter_InterlockEvent_NotExists_NotFound(t *testing.T) {
+	t.Parallel()
+	aa := interlock.NewAdapterAsserter(newMockStateStore(), newMockEventReader())
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertInterlockEvent, Target: "POST_RUN_DRIFT", Condition: types.CondNotExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// evalInterlockEvent reports whether event was found; engine handles condition inversion
+	if ok {
+		t.Error("expected false (no matching event)")
+	}
+}
+
+func TestAdapterAsserter_InterlockEvent_NotExists_Found(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	reader := newMockEventReader()
+	reader.events = append(reader.events, types.ChaosEvent{
+		Scenario: "POST_RUN_DRIFT",
+		Mutation: "some-mutation",
+	})
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	ok, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertInterlockEvent, Target: "POST_RUN_DRIFT", Condition: types.CondNotExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// evalInterlockEvent reports whether event was found; engine handles condition inversion
+	if !ok {
+		t.Error("expected true (event was found)")
+	}
+}
+
+func TestAdapterAsserter_InterlockEvent_ManifestError(t *testing.T) {
+	t.Parallel()
+	store := newMockStateStore()
+	reader := newMockEventReader()
+	reader.err = fmt.Errorf("manifest unavailable")
+	aa := interlock.NewAdapterAsserter(store, reader)
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertInterlockEvent, Target: "POST_RUN_DRIFT", Condition: types.CondExists,
+	})
+	if err == nil {
+		t.Fatal("expected error when manifest fails")
+	}
+}
+
+// --- Job State and Rerun State stub tests ---
+
+func TestAdapterAsserter_JobState_ReturnsStubError(t *testing.T) {
+	t.Parallel()
+	aa := interlock.NewAdapterAsserter(newMockStateStore(), newMockEventReader())
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertJobState, Target: "pipeline/schedule/2024-01-15", Condition: types.CondStatusFailed,
+	})
+	if err == nil {
+		t.Fatal("expected error from job_state stub")
+	}
+}
+
+func TestAdapterAsserter_RerunState_ReturnsStubError(t *testing.T) {
+	t.Parallel()
+	aa := interlock.NewAdapterAsserter(newMockStateStore(), newMockEventReader())
+
+	_, err := aa.Evaluate(context.Background(), types.Assertion{
+		Type: types.AssertRerunState, Target: "pipeline/schedule/2024-01-15", Condition: types.CondExists,
+	})
+	if err == nil {
+		t.Fatal("expected error from rerun_state stub")
 	}
 }
