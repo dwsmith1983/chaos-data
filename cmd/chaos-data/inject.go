@@ -101,13 +101,67 @@ func injectCmd() *cobra.Command {
 				return err
 			}
 
+			ctx := context.Background()
+
+			// Load config file (--config flag > auto-discovery > none).
+			configFlag, _ := cmd.Flags().GetString("config")
+			configPath := resolveConfigPath(configFlag)
+			var fileCfg config.Config
+			if configPath != "" {
+				fileCfg, err = config.Load(configPath)
+				if err != nil {
+					return err
+				}
+				if valErr := fileCfg.Validate(); valErr != nil {
+					return valErr
+				}
+			}
+
+			// Transport: CLI flags override config.
+			var transport adapter.DataTransport
+			if inputDir != "" && outputDir != "" {
+				transport = local.NewFSTransport(inputDir, outputDir)
+			} else if configPath != "" {
+				transport, err = fileCfg.BuildTransport(ctx)
+				if err != nil {
+					return err
+				}
+			}
+			if transport == nil {
+				return fmt.Errorf("transport required: provide --input/--output flags or configure transport in config file")
+			}
+
+			// Safety: config > ConfigSafety default.
+			var safety adapter.SafetyController
+			if configPath != "" {
+				safety, err = fileCfg.BuildSafety(ctx)
+				if err != nil {
+					return err
+				}
+			}
+			if safety == nil {
+				safety = local.NewConfigSafety(types.Defaults().Safety)
+			}
+
+			// Emitter: config > StdoutEmitter default.
+			var emitter adapter.EventEmitter
+			if configPath != "" {
+				emitter, err = fileCfg.BuildEmitter(ctx, cmd.OutOrStdout())
+				if err != nil {
+					return err
+				}
+			}
+			if emitter == nil {
+				emitter = local.NewStdoutEmitter(cmd.OutOrStdout())
+			}
+
+			// State store (independent of config transport).
 			stateStore, err := local.NewSQLiteState(stateDB)
 			if err != nil {
 				return fmt.Errorf("open state store %q: %w", stateDB, err)
 			}
 			defer stateStore.Close()
 
-			transport := local.NewFSTransport(inputDir, outputDir)
 			registry := fullStatefulRegistry(stateStore)
 
 			cfg := types.EngineConfig{
@@ -124,28 +178,25 @@ func injectCmd() *cobra.Command {
 				cfg.AssertPollInterval = types.Duration{Duration: time.Second}
 			}
 
-			var opts []engine.EngineOption
-			configFlag, _ := cmd.Flags().GetString("config")
-			configPath := resolveConfigPath(configFlag)
+			// Asserter: config > interlock fallback.
+			opts := []engine.EngineOption{
+				engine.WithSafety(safety),
+				engine.WithEmitter(emitter),
+			}
 			if configPath != "" {
-				fileCfg, loadErr := config.Load(configPath)
-				if loadErr != nil {
-					return loadErr
-				}
-				if valErr := fileCfg.Validate(); valErr != nil {
-					return valErr
-				}
 				a, buildErr := fileCfg.BuildAsserter()
 				if buildErr != nil {
 					return buildErr
 				}
 				if a != nil {
 					opts = append(opts, engine.WithAsserter(a))
+				} else {
+					reader := local.NewNoopEventReader()
+					opts = append(opts, engine.WithAsserter(interlock.NewAdapterAsserter(stateStore, reader)))
 				}
 			} else {
 				reader := local.NewNoopEventReader()
-				a := interlock.NewAdapterAsserter(stateStore, reader)
-				opts = append(opts, engine.WithAsserter(a))
+				opts = append(opts, engine.WithAsserter(interlock.NewAdapterAsserter(stateStore, reader)))
 			}
 
 			eng := engine.New(
@@ -156,7 +207,6 @@ func injectCmd() *cobra.Command {
 				opts...,
 			)
 
-			ctx := context.Background()
 			obj := types.DataObject{Key: "inject"}
 			records, err := eng.ProcessObject(ctx, obj)
 			if err != nil {
@@ -195,8 +245,6 @@ func injectCmd() *cobra.Command {
 	cmd.Flags().Bool("assert-wait", false, "Block until assertions are satisfied or timeout (polls every 1s)")
 
 	_ = cmd.MarkFlagRequired("scenario")
-	_ = cmd.MarkFlagRequired("input")
-	_ = cmd.MarkFlagRequired("output")
 
 	return cmd
 }
