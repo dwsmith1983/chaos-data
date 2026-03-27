@@ -403,3 +403,59 @@ class TestInject:
         client = ChaosDataClient()
         with pytest.raises(ValueError, match="null bytes"):
             client.inject("test", "data.csv", "/tmp/in", "/tmp/\x00bad")
+
+
+class TestAPICallEdgeCases:
+    @patch("chaosdata.client.subprocess.run")
+    def test_api_call_invalid_json_response(self, mock_run: MagicMock) -> None:
+        """_api_call raises ChaosDataError when stdout is not valid JSON."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["chaos-data", "api"],
+            returncode=0,
+            stdout="this is not json",
+            stderr="",
+        )
+        client = ChaosDataClient()
+        with pytest.raises(ChaosDataError) as exc_info:
+            client._api_call("test")
+        assert "invalid JSON" in exc_info.value.stderr
+
+    @patch("chaosdata.client.subprocess.run")
+    def test_api_call_non_dict_response(self, mock_run: MagicMock) -> None:
+        """_api_call raises ChaosDataError when response is a JSON array, not dict."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=["chaos-data", "api"],
+            returncode=0,
+            stdout="[1, 2, 3]",
+            stderr="",
+        )
+        client = ChaosDataClient()
+        with pytest.raises(ChaosDataError) as exc_info:
+            client._api_call("test")
+        assert "unexpected" in exc_info.value.stderr.lower()
+
+
+class TestNullByteValidation:
+    def test_run_null_bytes_input_dir(self) -> None:
+        """run() raises ValueError when input_dir contains null bytes."""
+        client = ChaosDataClient()
+        with pytest.raises(ValueError, match="null bytes"):
+            client.run("test", "/tmp/\x00bad", "/tmp/out")
+
+    def test_run_null_bytes_output_dir(self) -> None:
+        """run() raises ValueError when output_dir contains null bytes."""
+        client = ChaosDataClient()
+        with pytest.raises(ValueError, match="null bytes"):
+            client.run("test", "/tmp/in", "/tmp/\x00bad")
+
+
+class TestInitValidation:
+    def test_null_bytes_binary_path(self) -> None:
+        """__init__ raises ValueError when binary_path contains null bytes."""
+        with pytest.raises(ValueError, match="null bytes"):
+            ChaosDataClient(binary_path="/usr/bin/\x00bad")
+
+    def test_relative_path_not_found(self) -> None:
+        """__init__ raises FileNotFoundError for relative path that doesn't exist."""
+        with pytest.raises(FileNotFoundError):
+            ChaosDataClient(binary_path="./nonexistent-binary")
