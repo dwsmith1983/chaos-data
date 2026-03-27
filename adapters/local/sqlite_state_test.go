@@ -10,6 +10,17 @@ import (
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
+func insertJobEvent(t *testing.T, s *local.SQLiteState, pipeline, schedule, date, event, runID, timestamp string) {
+	t.Helper()
+	_, err := s.DBForTest().Exec(
+		`INSERT INTO job_events (pipeline, schedule, date, event, run_id, timestamp) VALUES (?, ?, ?, ?, ?, ?)`,
+		pipeline, schedule, date, event, runID, timestamp,
+	)
+	if err != nil {
+		t.Fatalf("insert job event: %v", err)
+	}
+}
+
 func newTestSQLiteState(t *testing.T) *local.SQLiteState {
 	t.Helper()
 	s, err := local.NewSQLiteState(":memory:")
@@ -588,20 +599,12 @@ func TestSQLiteState_ReadJobEvents_WithData(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 
-	// Insert test rows using InsertJobEventForTest (a test helper we'll add).
-	if err := s.InsertJobEventForTest("pipe-a", "daily", "2025-07-01", "started", "run-1", "2025-07-01T10:00:00Z"); err != nil {
-		t.Fatalf("insert job event 1: %v", err)
-	}
-	if err := s.InsertJobEventForTest("pipe-a", "daily", "2025-07-01", "completed", "run-1", "2025-07-01T10:05:00Z"); err != nil {
-		t.Fatalf("insert job event 2: %v", err)
-	}
-	if err := s.InsertJobEventForTest("pipe-a", "daily", "2025-07-01", "failed", "run-2", "2025-07-01T10:10:00Z"); err != nil {
-		t.Fatalf("insert job event 3: %v", err)
-	}
+	// Insert test rows using helper (fatals on error).
+	insertJobEvent(t, s, "pipe-a", "daily", "2025-07-01", "started", "run-1", "2025-07-01T10:00:00Z")
+	insertJobEvent(t, s, "pipe-a", "daily", "2025-07-01", "completed", "run-1", "2025-07-01T10:05:00Z")
+	insertJobEvent(t, s, "pipe-a", "daily", "2025-07-01", "failed", "run-2", "2025-07-01T10:10:00Z")
 	// Different pipeline — should not appear.
-	if err := s.InsertJobEventForTest("pipe-b", "daily", "2025-07-01", "started", "run-3", "2025-07-01T11:00:00Z"); err != nil {
-		t.Fatalf("insert job event 4: %v", err)
-	}
+	insertJobEvent(t, s, "pipe-b", "daily", "2025-07-01", "started", "run-3", "2025-07-01T11:00:00Z")
 
 	got, err := s.ReadJobEvents(ctx, "pipe-a", "daily", "2025-07-01")
 	if err != nil {
