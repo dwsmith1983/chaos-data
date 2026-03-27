@@ -53,3 +53,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "chaos_config_yaml" {
+  description = "YAML configuration for chaos-data asserter adapters (Dagster/Airflow). Passed as CHAOS_CONFIG_YAML environment variable to the proxy Lambda."
+  type        = string
+  default     = ""
+}

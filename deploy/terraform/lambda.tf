@@ -15,13 +15,18 @@ resource "aws_lambda_function" "proxy" {
   source_code_hash = filebase64sha256(var.proxy_lambda_zip_path)
 
   environment {
-    variables = {
-      STAGING_BUCKET  = var.staging_bucket_name
-      PIPELINE_BUCKET = var.pipeline_bucket_name
-      TABLE_NAME      = var.table_name
-      EVENT_BUS_NAME  = var.event_bus_name
-      HOLD_PREFIX     = var.hold_prefix
-    }
+    variables = merge(
+      {
+        STAGING_BUCKET  = var.staging_bucket_name
+        PIPELINE_BUCKET = var.pipeline_bucket_name
+        TABLE_NAME      = var.table_name
+        EVENT_BUS_NAME  = var.event_bus_name
+        HOLD_PREFIX     = var.hold_prefix
+      },
+      var.chaos_config_yaml != "" ? {
+        CHAOS_CONFIG_YAML = var.chaos_config_yaml
+      } : {}
+    )
   }
 
   tags = var.tags
