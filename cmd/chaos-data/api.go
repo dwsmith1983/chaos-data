@@ -38,6 +38,15 @@ type apiResponse struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// apiDeps holds pre-built adapter dependencies for the API command,
+// constructed once from the config file and threaded to all handlers.
+type apiDeps struct {
+	transport adapter.DataTransport
+	safety    adapter.SafetyController
+	emitter   adapter.EventEmitter
+	asserter  adapter.Asserter
+}
+
 // apiCmd returns a cobra command that reads JSON requests from stdin
 // and writes JSON responses to stdout.
 func apiCmd() *cobra.Command {
@@ -45,9 +54,13 @@ func apiCmd() *cobra.Command {
 		Use:   "api",
 		Short: "JSON stdin/stdout API for programmatic access",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			var asserter adapter.Asserter
+			ctx := context.Background()
+
+			// Load config file (--config flag > auto-discovery > none).
 			configFlag, _ := cmd.Flags().GetString("config")
 			configPath := resolveConfigPath(configFlag)
+
+			var deps apiDeps
 			if configPath != "" {
 				fileCfg, err := config.Load(configPath)
 				if err != nil {
@@ -56,18 +69,46 @@ func apiCmd() *cobra.Command {
 				if err := fileCfg.Validate(); err != nil {
 					return err
 				}
-				var buildErr error
-				asserter, buildErr = fileCfg.BuildAsserter()
-				if buildErr != nil {
-					return buildErr
+
+				transport, err := fileCfg.BuildTransport(ctx)
+				if err != nil {
+					return err
 				}
+				deps.transport = transport
+
+				safety, err := fileCfg.BuildSafety(ctx)
+				if err != nil {
+					return err
+				}
+				deps.safety = safety
+
+				emitter, err := fileCfg.BuildEmitter(ctx, cmd.OutOrStdout())
+				if err != nil {
+					return err
+				}
+				deps.emitter = emitter
+
+				asserter, err := fileCfg.BuildAsserter()
+				if err != nil {
+					return err
+				}
+				deps.asserter = asserter
 			}
-			return runAPI(cmd.InOrStdin(), cmd.OutOrStdout(), asserter)
+
+			// Apply defaults for safety and emitter when not set by config.
+			if deps.safety == nil {
+				deps.safety = local.NewConfigSafety(types.Defaults().Safety)
+			}
+			if deps.emitter == nil {
+				deps.emitter = local.NewStdoutEmitter(cmd.OutOrStdout())
+			}
+
+			return runAPI(cmd.InOrStdin(), cmd.OutOrStdout(), deps)
 		},
 	}
 }
 
-func runAPI(in io.Reader, out io.Writer, asserter adapter.Asserter) error {
+func runAPI(in io.Reader, out io.Writer, deps apiDeps) error {
 	var req apiRequest
 	if err := json.NewDecoder(in).Decode(&req); err != nil {
 		return writeResponse(out, apiResponse{
@@ -80,13 +121,13 @@ func runAPI(in io.Reader, out io.Writer, asserter adapter.Asserter) error {
 	case "catalog":
 		return handleCatalogAPI(out)
 	case "inject":
-		return handleInjectAPI(out, req.Params, asserter)
+		return handleInjectAPI(out, req.Params, deps)
 	case "release":
-		return handleReleaseAPI(out, req.Params)
+		return handleReleaseAPI(out, req.Params, deps)
 	case "run":
-		return handleRunAPI(out, req.Params, asserter)
+		return handleRunAPI(out, req.Params, deps)
 	case "status":
-		return handleStatusAPI(out, req.Params)
+		return handleStatusAPI(out, req.Params, deps)
 	default:
 		return writeResponse(out, apiResponse{
 			Success: false,
@@ -130,31 +171,52 @@ func handleCatalogAPI(out io.Writer) error {
 	})
 }
 
-func handleRunAPI(out io.Writer, params map[string]string, asserter adapter.Asserter) error {
-	scenarioName := params["scenario"]
+// resolveTransport returns a transport from request params (input/output),
+// falling back to the pre-built deps transport. Returns nil if neither is
+// available (caller must check).
+func resolveTransport(params map[string]string, deps apiDeps) (adapter.DataTransport, error) {
 	inputDir := params["input"]
 	outputDir := params["output"]
 
-	if scenarioName == "" || inputDir == "" || outputDir == "" {
+	if inputDir != "" && outputDir != "" {
+		absIn, err := filepath.Abs(inputDir)
+		if err != nil {
+			return nil, fmt.Errorf("invalid input path: %v", err)
+		}
+		absOut, err := filepath.Abs(outputDir)
+		if err != nil {
+			return nil, fmt.Errorf("invalid output path: %v", err)
+		}
+		return local.NewFSTransport(absIn, absOut), nil
+	}
+
+	if deps.transport != nil {
+		return deps.transport, nil
+	}
+
+	return nil, nil
+}
+
+func handleRunAPI(out io.Writer, params map[string]string, deps apiDeps) error {
+	scenarioName := params["scenario"]
+	if scenarioName == "" {
 		return writeResponse(out, apiResponse{
 			Success: false,
 			Error:   "missing required params: scenario, input, output",
 		})
 	}
 
-	// Resolve to absolute paths to prevent relative path confusion.
-	inputDir, err := filepath.Abs(inputDir)
+	transport, err := resolveTransport(params, deps)
 	if err != nil {
 		return writeResponse(out, apiResponse{
 			Success: false,
-			Error:   fmt.Sprintf("invalid input path: %v", err),
+			Error:   err.Error(),
 		})
 	}
-	outputDir, err = filepath.Abs(outputDir)
-	if err != nil {
+	if transport == nil {
 		return writeResponse(out, apiResponse{
 			Success: false,
-			Error:   fmt.Sprintf("invalid output path: %v", err),
+			Error:   "missing required params: scenario, input, output",
 		})
 	}
 
@@ -166,13 +228,16 @@ func handleRunAPI(out io.Writer, params map[string]string, asserter adapter.Asse
 		})
 	}
 
-	transport := local.NewFSTransport(inputDir, outputDir)
-	safety := local.NewConfigSafety(types.Defaults().Safety)
 	registry := defaultRegistry()
 
-	opts := []engine.EngineOption{engine.WithSafety(safety)}
-	if asserter != nil {
-		opts = append(opts, engine.WithAsserter(asserter))
+	opts := []engine.EngineOption{
+		engine.WithSafety(deps.safety),
+	}
+	if deps.emitter != nil {
+		opts = append(opts, engine.WithEmitter(deps.emitter))
+	}
+	if deps.asserter != nil {
+		opts = append(opts, engine.WithAsserter(deps.asserter))
 	}
 
 	eng := engine.New(
@@ -198,36 +263,22 @@ func handleRunAPI(out io.Writer, params map[string]string, asserter adapter.Asse
 	})
 }
 
-func handleStatusAPI(out io.Writer, params map[string]string) error {
-	inputDir := params["input"]
-	outputDir := params["output"]
-
-	if inputDir == "" || outputDir == "" {
+func handleStatusAPI(out io.Writer, params map[string]string, deps apiDeps) error {
+	transport, err := resolveTransport(params, deps)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+	if transport == nil {
 		return writeResponse(out, apiResponse{
 			Success: false,
 			Error:   "missing required params: input, output",
 		})
 	}
 
-	// Resolve to absolute paths to prevent relative path confusion.
-	inputDir, err := filepath.Abs(inputDir)
-	if err != nil {
-		return writeResponse(out, apiResponse{
-			Success: false,
-			Error:   fmt.Sprintf("invalid input path: %v", err),
-		})
-	}
-	outputDir, err = filepath.Abs(outputDir)
-	if err != nil {
-		return writeResponse(out, apiResponse{
-			Success: false,
-			Error:   fmt.Sprintf("invalid output path: %v", err),
-		})
-	}
-
-	transport := local.NewFSTransport(inputDir, outputDir)
 	ctx := context.Background()
-
 	held, err := transport.ListHeld(ctx)
 	if err != nil {
 		return writeResponse(out, apiResponse{
@@ -251,35 +302,22 @@ func handleStatusAPI(out io.Writer, params map[string]string) error {
 	})
 }
 
-func handleReleaseAPI(out io.Writer, params map[string]string) error {
-	inputDir := params["input"]
-	outputDir := params["output"]
-	key := params["key"]
-
-	if inputDir == "" || outputDir == "" {
+func handleReleaseAPI(out io.Writer, params map[string]string, deps apiDeps) error {
+	transport, err := resolveTransport(params, deps)
+	if err != nil {
+		return writeResponse(out, apiResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
+	}
+	if transport == nil {
 		return writeResponse(out, apiResponse{
 			Success: false,
 			Error:   "missing required params: input, output",
 		})
 	}
 
-	// Resolve to absolute paths to prevent relative path confusion.
-	inputDir, err := filepath.Abs(inputDir)
-	if err != nil {
-		return writeResponse(out, apiResponse{
-			Success: false,
-			Error:   fmt.Sprintf("invalid input path: %v", err),
-		})
-	}
-	outputDir, err = filepath.Abs(outputDir)
-	if err != nil {
-		return writeResponse(out, apiResponse{
-			Success: false,
-			Error:   fmt.Sprintf("invalid output path: %v", err),
-		})
-	}
-
-	transport := local.NewFSTransport(inputDir, outputDir)
+	key := params["key"]
 	ctx := context.Background()
 
 	if key != "" {
@@ -308,32 +346,28 @@ func handleReleaseAPI(out io.Writer, params map[string]string) error {
 	})
 }
 
-func handleInjectAPI(out io.Writer, params map[string]string, asserter adapter.Asserter) error {
+func handleInjectAPI(out io.Writer, params map[string]string, deps apiDeps) error {
 	scenarioName := params["scenario"]
-	inputDir := params["input"]
-	outputDir := params["output"]
 	stateDB := params["state_db"]
 
-	if scenarioName == "" || inputDir == "" || outputDir == "" {
+	if scenarioName == "" {
 		return writeResponse(out, apiResponse{
 			Success: false,
 			Error:   "missing required params: scenario, input, output",
 		})
 	}
 
-	// Resolve to absolute paths to prevent relative path confusion.
-	inputDir, err := filepath.Abs(inputDir)
+	transport, err := resolveTransport(params, deps)
 	if err != nil {
 		return writeResponse(out, apiResponse{
 			Success: false,
-			Error:   fmt.Sprintf("invalid input path: %v", err),
+			Error:   err.Error(),
 		})
 	}
-	outputDir, err = filepath.Abs(outputDir)
-	if err != nil {
+	if transport == nil {
 		return writeResponse(out, apiResponse{
 			Success: false,
-			Error:   fmt.Sprintf("invalid output path: %v", err),
+			Error:   "missing required params: scenario, input, output",
 		})
 	}
 
@@ -358,7 +392,6 @@ func handleInjectAPI(out io.Writer, params map[string]string, asserter adapter.A
 	}
 	defer stateStore.Close()
 
-	transport := local.NewFSTransport(inputDir, outputDir)
 	registry := fullStatefulRegistry(stateStore)
 
 	cfg := types.EngineConfig{
@@ -370,9 +403,14 @@ func handleInjectAPI(out io.Writer, params map[string]string, asserter adapter.A
 		},
 	}
 
-	var opts []engine.EngineOption
-	if asserter != nil {
-		opts = append(opts, engine.WithAsserter(asserter))
+	opts := []engine.EngineOption{
+		engine.WithSafety(deps.safety),
+	}
+	if deps.emitter != nil {
+		opts = append(opts, engine.WithEmitter(deps.emitter))
+	}
+	if deps.asserter != nil {
+		opts = append(opts, engine.WithAsserter(deps.asserter))
 	} else {
 		reader := local.NewNoopEventReader()
 		interlockAsserter := interlock.NewAdapterAsserter(stateStore, reader)
