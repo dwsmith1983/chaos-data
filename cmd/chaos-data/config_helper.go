@@ -15,7 +15,7 @@ func resolveConfigPath(explicit string) string {
 	}
 
 	// Check current directory first.
-	if _, err := os.Stat("chaos.yaml"); err == nil {
+	if info, err := os.Stat("chaos.yaml"); err == nil && !info.IsDir() {
 		return "chaos.yaml"
 	}
 
@@ -25,7 +25,7 @@ func resolveConfigPath(explicit string) string {
 		return ""
 	}
 	xdgPath := filepath.Join(home, ".config", "chaos-data", "config.yaml")
-	if _, err := os.Stat(xdgPath); err == nil {
+	if info, err := os.Stat(xdgPath); err == nil && !info.IsDir() {
 		return xdgPath
 	}
 

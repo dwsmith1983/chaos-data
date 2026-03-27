@@ -124,3 +124,32 @@ func TestResolveConfigPath_CwdTakesPrecedenceOverXDG(t *testing.T) {
 		t.Errorf("expected 'chaos.yaml' (cwd precedence), got %q", got)
 	}
 }
+
+func TestResolveConfigPath_IgnoresDirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a directory named "chaos.yaml" — should not be treated as config.
+	chaosDir := filepath.Join(dir, "chaos.yaml")
+	if err := os.MkdirAll(chaosDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Change to the temp dir so resolveConfigPath finds "chaos.yaml" via os.Stat.
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(orig)
+
+	result := resolveConfigPath("")
+	if result == "chaos.yaml" {
+		t.Error("resolveConfigPath should not return a directory named chaos.yaml")
+	}
+	if result != "" {
+		t.Errorf("expected empty string, got %q", result)
+	}
+}
