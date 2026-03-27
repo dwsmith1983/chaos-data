@@ -104,7 +104,8 @@ func runCmd() *cobra.Command {
 			opts = append(opts, engine.WithEmitter(emitter))
 			opts = append(opts, engine.WithSafety(safety))
 
-			configPath, _ := cmd.Flags().GetString("config")
+			configFlag, _ := cmd.Flags().GetString("config")
+			configPath := resolveConfigPath(configFlag)
 			if configPath != "" {
 				fileCfg, loadErr := config.Load(configPath)
 				if loadErr != nil {

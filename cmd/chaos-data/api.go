@@ -46,7 +46,8 @@ func apiCmd() *cobra.Command {
 		Short: "JSON stdin/stdout API for programmatic access",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var asserter adapter.Asserter
-			configPath, _ := cmd.Flags().GetString("config")
+			configFlag, _ := cmd.Flags().GetString("config")
+			configPath := resolveConfigPath(configFlag)
 			if configPath != "" {
 				fileCfg, err := config.Load(configPath)
 				if err != nil {

@@ -125,7 +125,8 @@ func injectCmd() *cobra.Command {
 			}
 
 			var opts []engine.EngineOption
-			configPath, _ := cmd.Flags().GetString("config")
+			configFlag, _ := cmd.Flags().GetString("config")
+			configPath := resolveConfigPath(configFlag)
 			if configPath != "" {
 				fileCfg, loadErr := config.Load(configPath)
 				if loadErr != nil {
