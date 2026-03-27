@@ -13,13 +13,16 @@ const (
 	AssertTriggerState AssertionType = "trigger_state"
 	AssertEventEmitted AssertionType = "event_emitted"
 	AssertJobState     AssertionType = "job_state"
-	AssertDataState    AssertionType = "data_state"
+	AssertDataState        AssertionType = "data_state"
+	AssertInterlockEvent   AssertionType = "interlock_event"
+	AssertRerunState       AssertionType = "rerun_state"
 )
 
 // IsValid reports whether the assertion type is known.
 func (at AssertionType) IsValid() bool {
 	switch at {
-	case AssertSensorState, AssertTriggerState, AssertEventEmitted, AssertJobState, AssertDataState:
+	case AssertSensorState, AssertTriggerState, AssertEventEmitted, AssertJobState, AssertDataState,
+		AssertInterlockEvent, AssertRerunState:
 		return true
 	default:
 		return false
@@ -68,7 +71,9 @@ var validConditions = map[AssertionType]map[Condition]bool{
 		CondStatusTimeout: true, CondWasTriggered: true,
 		CondStatusRunning: true, CondStatusStopped: true,
 	},
-	AssertEventEmitted: {CondExists: true},
+	AssertEventEmitted:   {CondExists: true, CondNotExists: true},
+	AssertInterlockEvent: {CondExists: true, CondNotExists: true},
+	AssertRerunState:     {CondExists: true, CondNotExists: true},
 	AssertJobState: {
 		CondStatusFailed: true, CondStatusRunning: true, CondStatusSuccess: true,
 		CondStatusKilled: true, CondIsPending: true,

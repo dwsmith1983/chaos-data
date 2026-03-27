@@ -99,6 +99,38 @@ func TestCondition_ValidFor(t *testing.T) {
 	}
 }
 
+func TestAssertInterlockEvent_IsValid(t *testing.T) {
+	if !AssertInterlockEvent.IsValid() {
+		t.Error("AssertInterlockEvent should be valid")
+	}
+}
+
+func TestAssertRerunState_IsValid(t *testing.T) {
+	if !AssertRerunState.IsValid() {
+		t.Error("AssertRerunState should be valid")
+	}
+}
+
+func TestCondNotExists_ValidForEventAssertions(t *testing.T) {
+	tests := []struct {
+		at   AssertionType
+		want bool
+	}{
+		{AssertEventEmitted, true},
+		{AssertInterlockEvent, true},
+		{AssertRerunState, true},
+		{AssertSensorState, false},
+		{AssertTriggerState, false},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.at), func(t *testing.T) {
+			if got := CondNotExists.ValidFor(tt.at); got != tt.want {
+				t.Errorf("CondNotExists.ValidFor(%q) = %v, want %v", tt.at, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAssertion_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
