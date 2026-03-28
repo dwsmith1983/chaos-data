@@ -79,7 +79,32 @@ func TestStaleSensorMutation_Apply(t *testing.T) {
 			wantErr:     true,
 		},
 		{
-			name: "missing last_update_age returns error",
+			name: "age alias works when last_update_age missing",
+			params: map[string]string{
+				"sensor_key": "sensor-1",
+				"pipeline":   "etl-daily",
+				"age":        "4h",
+			},
+			sensor:      originalSensor,
+			wantApplied: true,
+			wantErr:     false,
+			checkAge:    "4h",
+		},
+		{
+			name: "last_update_age takes precedence over age",
+			params: map[string]string{
+				"sensor_key":      "sensor-1",
+				"pipeline":        "etl-daily",
+				"last_update_age": "6h",
+				"age":             "1h",
+			},
+			sensor:      originalSensor,
+			wantApplied: true,
+			wantErr:     false,
+			checkAge:    "6h",
+		},
+		{
+			name: "missing both last_update_age and age returns error",
 			params: map[string]string{
 				"sensor_key": "sensor-1",
 				"pipeline":   "etl-daily",

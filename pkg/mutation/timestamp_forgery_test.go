@@ -212,6 +212,159 @@ func TestTimestampForgeryMutation_Apply(t *testing.T) {
 			},
 		},
 		{
+			name: "field_and_offset_write_to_metadata",
+			params: map[string]string{
+				"sensor_key": "clock-sensor",
+				"pipeline":   "etl-daily",
+				"field":      "schedule_time",
+				"offset":     "-3500s",
+			},
+			seedSensor:  &seededSensor,
+			wantApplied: true,
+			wantErr:     false,
+			check: func(t *testing.T, store *mockStateStore) {
+				t.Helper()
+				written, ok := store.sensors["etl-daily/clock-sensor"]
+				if !ok {
+					t.Fatal("sensor not written to store")
+				}
+				schedStr, ok := written.Metadata["schedule_time"]
+				if !ok {
+					t.Fatal("Metadata[\"schedule_time\"] not set")
+				}
+				parsed, err := time.Parse(time.RFC3339Nano, schedStr)
+				if err != nil {
+					t.Fatalf("parse schedule_time: %v", err)
+				}
+				expected := time.Now().Add(-3500 * time.Second)
+				diff := parsed.Sub(expected)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff > 5*time.Second {
+					t.Errorf("schedule_time diff from expected = %v, want < 5s", diff)
+				}
+				// Existing metadata should be preserved.
+				if written.Metadata["existing"] != "value" {
+					t.Errorf("Metadata[\"existing\"] = %q, want %q", written.Metadata["existing"], "value")
+				}
+			},
+		},
+		{
+			name: "field_and_offset_with_synthetic_sensor_key",
+			params: map[string]string{
+				"pipeline": "etl-daily",
+				"field":    "schedule_time",
+				"offset":   "-1h",
+			},
+			// No sensor_key provided — should use __schedule_meta.
+			wantApplied: true,
+			wantErr:     false,
+			check: func(t *testing.T, store *mockStateStore) {
+				t.Helper()
+				written, ok := store.sensors["etl-daily/__schedule_meta"]
+				if !ok {
+					t.Fatal("sensor not written with synthetic key __schedule_meta")
+				}
+				if written.Key != "__schedule_meta" {
+					t.Errorf("sensor key = %q, want %q", written.Key, "__schedule_meta")
+				}
+				schedStr, ok := written.Metadata["schedule_time"]
+				if !ok {
+					t.Fatal("Metadata[\"schedule_time\"] not set")
+				}
+				parsed, err := time.Parse(time.RFC3339Nano, schedStr)
+				if err != nil {
+					t.Fatalf("parse schedule_time: %v", err)
+				}
+				expected := time.Now().Add(-1 * time.Hour)
+				diff := parsed.Sub(expected)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff > 5*time.Second {
+					t.Errorf("schedule_time diff from expected = %v, want < 5s", diff)
+				}
+			},
+		},
+		{
+			name: "field_and_offset_combined_with_last_updated_offset",
+			params: map[string]string{
+				"sensor_key":          "clock-sensor",
+				"pipeline":            "etl-daily",
+				"last_updated_offset": "-2h",
+				"field":               "run_time",
+				"offset":              "+30m",
+			},
+			seedSensor:  &seededSensor,
+			wantApplied: true,
+			wantErr:     false,
+			check: func(t *testing.T, store *mockStateStore) {
+				t.Helper()
+				written, ok := store.sensors["etl-daily/clock-sensor"]
+				if !ok {
+					t.Fatal("sensor not written to store")
+				}
+				// LastUpdated should be ~2h ago.
+				expectedLU := time.Now().Add(-2 * time.Hour)
+				diff := written.LastUpdated.Sub(expectedLU)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff > 5*time.Second {
+					t.Errorf("LastUpdated diff = %v, want < 5s", diff)
+				}
+				// run_time should be ~30m ahead.
+				rtStr, ok := written.Metadata["run_time"]
+				if !ok {
+					t.Fatal("Metadata[\"run_time\"] not set")
+				}
+				parsed, err := time.Parse(time.RFC3339Nano, rtStr)
+				if err != nil {
+					t.Fatalf("parse run_time: %v", err)
+				}
+				expectedRT := time.Now().Add(30 * time.Minute)
+				diff = parsed.Sub(expectedRT)
+				if diff < 0 {
+					diff = -diff
+				}
+				if diff > 5*time.Second {
+					t.Errorf("run_time diff = %v, want < 5s", diff)
+				}
+			},
+		},
+		{
+			name: "invalid_offset_returns_error",
+			params: map[string]string{
+				"sensor_key": "clock-sensor",
+				"pipeline":   "etl-daily",
+				"field":      "schedule_time",
+				"offset":     "not-a-duration",
+			},
+			wantApplied: false,
+			wantErr:     true,
+		},
+		{
+			name: "field_without_offset_requires_other_params",
+			params: map[string]string{
+				"sensor_key": "clock-sensor",
+				"pipeline":   "etl-daily",
+				"field":      "schedule_time",
+			},
+			wantApplied: false,
+			wantErr:     true,
+		},
+		{
+			name: "offset_without_field_requires_other_params",
+			params: map[string]string{
+				"sensor_key": "clock-sensor",
+				"pipeline":   "etl-daily",
+				"offset":     "-1h",
+			},
+			wantApplied: false,
+			wantErr:     true,
+		},
+		{
 			name: "missing_sensor_key",
 			params: map[string]string{
 				"pipeline":            "etl-daily",

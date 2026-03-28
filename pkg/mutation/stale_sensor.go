@@ -39,8 +39,11 @@ func (s *StaleSensorMutation) Apply(ctx context.Context, obj types.DataObject, _
 		err := fmt.Errorf("stale-sensor mutation: missing required param \"pipeline\"")
 		return types.MutationRecord{Applied: false, Mutation: "stale-sensor", Error: err.Error()}, err
 	}
-	ageStr, ok := params["last_update_age"]
-	if !ok || ageStr == "" {
+	ageStr := params["last_update_age"]
+	if ageStr == "" {
+		ageStr = params["age"]
+	}
+	if ageStr == "" {
 		err := fmt.Errorf("stale-sensor mutation: missing required param \"last_update_age\"")
 		return types.MutationRecord{Applied: false, Mutation: "stale-sensor", Error: err.Error()}, err
 	}

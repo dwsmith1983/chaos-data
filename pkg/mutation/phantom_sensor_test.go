@@ -54,6 +54,18 @@ func TestPhantomSensorMutation_Apply(t *testing.T) {
 			wantStatus:  types.SensorStatusReady,
 		},
 		{
+			name: "extra params stored in metadata",
+			params: map[string]string{
+				"pipeline":     "etl-daily",
+				"sensor_key":   "phantom-4",
+				"status":       "ready",
+				"sensor_count": "5",
+				"custom_tag":   "abc",
+			},
+			wantApplied: true,
+			wantStatus:  types.SensorStatusReady,
+		},
+		{
 			name: "missing pipeline returns error",
 			params: map[string]string{
 				"sensor_key": "phantom-1",
@@ -116,6 +128,29 @@ func TestPhantomSensorMutation_Apply(t *testing.T) {
 					}
 					if c.Sensor.Status != tt.wantStatus {
 						t.Errorf("sensor status = %q, want %q", c.Sensor.Status, tt.wantStatus)
+					}
+					// Verify extra params are stored in metadata.
+					knownKeys := map[string]struct{}{
+						"pipeline":   {},
+						"sensor_key": {},
+						"status":     {},
+					}
+					for k, v := range tt.params {
+						if _, isKnown := knownKeys[k]; isKnown {
+							continue
+						}
+						got, ok := c.Sensor.Metadata[k]
+						if !ok {
+							t.Errorf("Metadata[%q] not set, want %q", k, v)
+						} else if got != v {
+							t.Errorf("Metadata[%q] = %q, want %q", k, got, v)
+						}
+					}
+					// Known keys must NOT appear in metadata.
+					for k := range knownKeys {
+						if _, inMeta := c.Sensor.Metadata[k]; inMeta {
+							t.Errorf("known param %q should not be in Metadata", k)
+						}
 					}
 				}
 			}

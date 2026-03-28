@@ -45,11 +45,28 @@ func (p *PhantomSensorMutation) Apply(ctx context.Context, obj types.DataObject,
 		status = types.SensorStatusReady
 	}
 
+	// Copy remaining params (beyond the known keys) into metadata.
+	knownKeys := map[string]struct{}{
+		"pipeline":   {},
+		"sensor_key": {},
+		"status":     {},
+	}
+	var metadata map[string]string
+	for k, v := range params {
+		if _, isKnown := knownKeys[k]; !isKnown {
+			if metadata == nil {
+				metadata = make(map[string]string)
+			}
+			metadata[k] = v
+		}
+	}
+
 	sensor := adapter.SensorData{
 		Pipeline:    pipeline,
 		Key:         sensorKey,
 		Status:      status,
 		LastUpdated: time.Now(),
+		Metadata:    metadata,
 	}
 
 	if err := p.store.WriteSensor(ctx, pipeline, sensorKey, sensor); err != nil {
