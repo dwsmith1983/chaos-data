@@ -10,7 +10,7 @@ import (
 
 // InterlockEvaluator triggers Interlock rule evaluation after chaos injection.
 type InterlockEvaluator interface {
-	EvaluateAfterInjection(ctx context.Context, pipeline, schedule, date string) error
+	EvaluateAfterInjection(ctx context.Context, pipeline, schedule, date string, sensorKeys []string) error
 }
 
 // ---------------------------------------------------------------------------
@@ -28,7 +28,7 @@ func NewAWSInterlockEvaluator() *AWSInterlockEvaluator {
 
 // EvaluateAfterInjection is a no-op for AWS. DynamoDB Streams → stream-router
 // Lambda handles evaluation automatically when state changes.
-func (e *AWSInterlockEvaluator) EvaluateAfterInjection(_ context.Context, _, _, _ string) error {
+func (e *AWSInterlockEvaluator) EvaluateAfterInjection(_ context.Context, _, _, _ string, _ []string) error {
 	return nil
 }
 
@@ -45,7 +45,6 @@ type LocalInterlockEvaluator struct {
 	eventWriter *LocalEventReader
 	clock       adapter.Clock
 	modules     []EvalModule
-	sensorKeys  []string // populated per-scenario by SetSensorKeys
 }
 
 // NewLocalInterlockEvaluator returns a new LocalInterlockEvaluator with the
@@ -62,15 +61,9 @@ func NewLocalInterlockEvaluator(store adapter.StateStore, eventWriter *LocalEven
 	}
 }
 
-// SetSensorKeys sets the sensor keys from the current scenario's setup spec.
-// Must be called before EvaluateAfterInjection for each scenario.
-func (e *LocalInterlockEvaluator) SetSensorKeys(keys []string) {
-	e.sensorKeys = keys
-}
-
 // EvaluateAfterInjection reads the pipeline config, parses it to a generic
 // map, and dispatches evaluation to each registered module in order.
-func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pipeline, schedule, date string) error {
+func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pipeline, schedule, date string, sensorKeys []string) error {
 	// Read pipeline config.
 	configBytes, err := e.store.ReadPipelineConfig(ctx, pipeline)
 	if err != nil {
@@ -100,7 +93,7 @@ func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pi
 		Clock:       e.clock,
 		Schedule:    schedule,
 		Date:        date,
-		SensorKeys:  e.sensorKeys,
+		SensorKeys:  sensorKeys,
 	}
 
 	// Dispatch to modules in order.

@@ -15,7 +15,7 @@ var _ InterlockEvaluator = (*LocalInterlockEvaluator)(nil)
 func TestAWSInterlockEvaluator_NoOp(t *testing.T) {
 	t.Parallel()
 	e := NewAWSInterlockEvaluator()
-	err := e.EvaluateAfterInjection(context.Background(), "pipe-a", "hourly", "2026-03-27T10")
+	err := e.EvaluateAfterInjection(context.Background(), "pipe-a", "hourly", "2026-03-27T10", nil)
 	if err != nil {
 		t.Fatalf("expected nil error for AWS no-op, got: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestLocalInterlockEvaluator_NoPipelineConfig(t *testing.T) {
 	reader := NewLocalEventReader()
 	e := NewLocalInterlockEvaluator(store, reader, clk)
 
-	err := e.EvaluateAfterInjection(context.Background(), "pipe-a", "hourly", "2026-03-27T10")
+	err := e.EvaluateAfterInjection(context.Background(), "pipe-a", "hourly", "2026-03-27T10", nil)
 	if err != nil {
 		t.Fatalf("expected nil error, got: %v", err)
 	}
@@ -76,7 +76,7 @@ validation:
 		t.Fatalf("WriteSensor: %v", err)
 	}
 
-	err := e.EvaluateAfterInjection(ctx, "pipe-b", "hourly", "2026-03-27T10")
+	err := e.EvaluateAfterInjection(ctx, "pipe-b", "hourly", "2026-03-27T10", nil)
 	if err != nil {
 		t.Fatalf("EvaluateAfterInjection: %v", err)
 	}
@@ -124,7 +124,7 @@ validation:
 		t.Fatalf("WriteSensor: %v", err)
 	}
 
-	err := e.EvaluateAfterInjection(ctx, "pipe-prefix", "hourly", "2026-03-27T10")
+	err := e.EvaluateAfterInjection(ctx, "pipe-prefix", "hourly", "2026-03-27T10", nil)
 	if err != nil {
 		t.Fatalf("EvaluateAfterInjection: %v", err)
 	}
@@ -173,7 +173,7 @@ validation:
 		t.Fatalf("WriteSensor: %v", err)
 	}
 
-	err := e.EvaluateAfterInjection(ctx, "pipe-c", "hourly", "2026-03-27T10")
+	err := e.EvaluateAfterInjection(ctx, "pipe-c", "hourly", "2026-03-27T10", nil)
 	if err != nil {
 		t.Fatalf("EvaluateAfterInjection: %v", err)
 	}

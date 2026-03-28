@@ -26,33 +26,41 @@ func (m *ValidationModule) Name() string { return "validation" }
 // engine. Emits JOB_TRIGGERED if rules pass, VALIDATION_EXHAUSTED otherwise.
 // Silently returns nil when the config has no validation section.
 func (m *ValidationModule) Evaluate(ctx context.Context, p EvalParams) error {
-	// Parse pipeline config to extract validation rules.
-	configBytes, err := marshalConfig(p.Config)
+	// Extract validation section from config map, then marshal only that
+	// sub-map for typed deserialization into interlock rule structs.
+	valRaw, ok := p.Config["validation"]
+	if !ok {
+		return nil // no validation section — skip
+	}
+	valSection, ok := valRaw.(map[string]any)
+	if !ok {
+		return nil // malformed validation section — skip
+	}
+
+	sectionBytes, err := yaml.Marshal(valSection)
 	if err != nil {
-		return fmt.Errorf("validation module: marshal config: %w", err)
+		return fmt.Errorf("validation module: marshal validation section: %w", err)
 	}
 
 	var vc struct {
-		Validation struct {
-			Trigger string                          `yaml:"trigger" json:"trigger"`
-			Rules   []interlocktypes.ValidationRule `yaml:"rules" json:"rules"`
-		} `yaml:"validation" json:"validation"`
+		Trigger string                          `yaml:"trigger" json:"trigger"`
+		Rules   []interlocktypes.ValidationRule `yaml:"rules" json:"rules"`
 	}
-	if err := yaml.Unmarshal(configBytes, &vc); err != nil {
-		if err2 := json.Unmarshal(configBytes, &vc); err2 != nil {
+	if err := yaml.Unmarshal(sectionBytes, &vc); err != nil {
+		if err2 := json.Unmarshal(sectionBytes, &vc); err2 != nil {
 			return fmt.Errorf("validation module: parse config: yaml=%v, json=%v", err, err2)
 		}
 	}
 
-	if len(vc.Validation.Rules) == 0 {
-		return nil // no validation section — skip
+	if len(vc.Rules) == 0 {
+		return nil // no validation rules — skip
 	}
 
 	// Build sensor data map from state store.
 	// Rule keys may include a SENSOR# prefix (interlock convention). Strip it
 	// before calling ReadSensor since the harness writes bare keys.
 	sensors := make(map[string]map[string]any)
-	for _, rule := range vc.Validation.Rules {
+	for _, rule := range vc.Rules {
 		bareKey := strings.TrimPrefix(rule.Key, "SENSOR#")
 		sensorData, err := p.Store.ReadSensor(ctx, p.Pipeline, bareKey)
 		if err != nil {
@@ -70,8 +78,8 @@ func (m *ValidationModule) Evaluate(ctx context.Context, p EvalParams) error {
 
 	// Evaluate rules using Interlock's validation engine.
 	result := interlockvalidation.EvaluateRules(
-		vc.Validation.Trigger,
-		vc.Validation.Rules,
+		vc.Trigger,
+		vc.Rules,
 		sensors,
 		p.Clock.Now(),
 	)
@@ -91,10 +99,4 @@ func (m *ValidationModule) Evaluate(ctx context.Context, p EvalParams) error {
 	}
 
 	return nil
-}
-
-// marshalConfig converts the parsed map back to bytes for structured
-// unmarshalling into the validation config type.
-func marshalConfig(config map[string]any) ([]byte, error) {
-	return yaml.Marshal(config)
 }

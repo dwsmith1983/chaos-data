@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/dwsmith1983/chaos-data/pkg/types"
-	"gopkg.in/yaml.v3"
 )
 
 // TriggerModule handles trigger-type scenarios where no validation rules are
@@ -38,21 +37,7 @@ func (m *TriggerModule) Evaluate(ctx context.Context, p EvalParams) error {
 	}
 
 	// Check if config has validation rules — if so, skip (ValidationModule owns this).
-	configBytes, err := marshalConfig(p.Config)
-	if err != nil {
-		return fmt.Errorf("trigger module: marshal config: %w", err)
-	}
-
-	var vc struct {
-		Validation struct {
-			Rules []any `yaml:"rules" json:"rules"`
-		} `yaml:"validation" json:"validation"`
-	}
-	if err := yaml.Unmarshal(configBytes, &vc); err != nil {
-		return nil // unparseable config — skip
-	}
-
-	if len(vc.Validation.Rules) > 0 {
+	if hasValidationRules(p.Config) {
 		return nil // has validation rules — ValidationModule handles this
 	}
 
@@ -75,7 +60,7 @@ func (m *TriggerModule) Evaluate(ctx context.Context, p EvalParams) error {
 			allReady = false
 			break
 		}
-		if sd.Status != types.SensorStatusReady && sd.Status != "COMPLETE" {
+		if sd.Status != types.SensorStatusReady && sd.Status != types.SensorStatusComplete {
 			allReady = false
 			break
 		}
@@ -96,4 +81,19 @@ func (m *TriggerModule) Evaluate(ctx context.Context, p EvalParams) error {
 	}
 
 	return nil
+}
+
+// hasValidationRules checks whether the config map contains a non-empty
+// validation rules slice, without marshalling to YAML/JSON.
+func hasValidationRules(config map[string]any) bool {
+	val, ok := config["validation"]
+	if !ok {
+		return false
+	}
+	valMap, ok := val.(map[string]any)
+	if !ok {
+		return false
+	}
+	rules, ok := valMap["rules"].([]any)
+	return ok && len(rules) > 0
 }

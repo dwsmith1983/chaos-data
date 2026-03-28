@@ -148,16 +148,12 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 
 	// 7. Trigger Interlock evaluation.
 	if ss.Setup != nil {
-		// Pass sensor keys from setup spec so evaluator modules can check readiness.
-		if le, ok := r.evaluator.(*LocalInterlockEvaluator); ok {
-			var sensorKeys []string
-			for k := range ss.Setup.Sensors {
-				sensorKeys = append(sensorKeys, k)
-			}
-			le.SetSensorKeys(sensorKeys)
+		var sensorKeys []string
+		for k := range ss.Setup.Sensors {
+			sensorKeys = append(sensorKeys, k)
 		}
 		if err := r.evaluator.EvaluateAfterInjection(ctx,
-			h.NamespacedPipeline(ss.Setup.Pipeline), "default", "default"); err != nil {
+			h.NamespacedPipeline(ss.Setup.Pipeline), "default", "default", sensorKeys); err != nil {
 			result.Error = fmt.Sprintf("evaluation failed: %v", err)
 			result.Passed = false
 			_ = h.Teardown(ctx)
