@@ -202,6 +202,8 @@ func (s *DynamoDBState) ReadChaosEvents(ctx context.Context, experimentID string
 }
 
 // WritePipelineConfig stores a pipeline configuration blob.
+// TODO(ttl): Add "expiresAt" attribute set to now+24h as a TTL safety net for
+// cleanup failures. Requires enabling TTL on the DynamoDB table via Terraform.
 func (s *DynamoDBState) WritePipelineConfig(ctx context.Context, pipeline string, config []byte) error {
 	_, err := s.api.PutItem(ctx, &dynamodb.PutItemInput{
 		TableName: &s.tableName,

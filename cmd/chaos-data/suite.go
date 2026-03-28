@@ -2,10 +2,16 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
+	interlockadapter "github.com/dwsmith1983/chaos-data/adapters/interlock"
+	"github.com/dwsmith1983/chaos-data/adapters/local"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
+	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	interlocksuite "github.com/dwsmith1983/chaos-data/suites/interlock"
 )
 
@@ -27,14 +33,65 @@ func suiteRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run a chaos testing suite",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			ct, err := interlocksuite.NewCoverageTracker(dir + "/coverage.yaml")
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// 1. Create state store.
+			store, err := local.NewSQLiteState(":memory:")
 			if err != nil {
-				return fmt.Errorf("load coverage registry: %w", err)
+				return fmt.Errorf("create state store: %w", err)
+			}
+			defer store.Close()
+
+			// 2. Create clock.
+			clk := adapter.NewWallClock()
+
+			// 3. Load coverage tracker.
+			ct, err := interlocksuite.NewCoverageTracker(filepath.Join(dir, "coverage.yaml"))
+			if err != nil {
+				return fmt.Errorf("load coverage: %w", err)
 			}
 
-			matrix := ct.Matrix()
-			return writeMatrix(matrix, format)
+			// 4. Create mutation registry with interlock mutations.
+			reg := mutation.NewRegistry()
+			if err := interlockadapter.RegisterAll(reg, store, interlockadapter.Config{}); err != nil {
+				return fmt.Errorf("register mutations: %w", err)
+			}
+
+			// 5. Create event reader and evaluator.
+			eventReader := interlocksuite.NewLocalEventReader()
+			evaluator := interlocksuite.NewLocalInterlockEvaluator(store, eventReader, clk)
+
+			// 6. Create suite runner.
+			runner := interlocksuite.NewSuiteRunner(store, reg, ct,
+				interlocksuite.WithSuiteClock(clk),
+				interlocksuite.WithSuiteEvaluator(evaluator),
+				interlocksuite.WithSuiteEventReader(eventReader),
+			)
+
+			// 7. Load and run all scenarios.
+			scenarioDir := filepath.Join(dir, "scenarios")
+			entries, err := os.ReadDir(scenarioDir)
+			if err != nil {
+				return fmt.Errorf("read scenarios dir: %w", err)
+			}
+			for _, category := range entries {
+				if !category.IsDir() {
+					continue
+				}
+				catPath := filepath.Join(scenarioDir, category.Name())
+				files, _ := filepath.Glob(filepath.Join(catPath, "*.yaml"))
+				for _, f := range files {
+					ss, err := interlocksuite.LoadSuiteScenario(f)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "skip %s: %v\n", f, err)
+						continue
+					}
+					runner.RunScenario(cmd.Context(), ss)
+				}
+			}
+
+			// 8. Output matrix.
+			matrix := runner.Report()
+			return writeMatrix(matrix, format, os.Stdout)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "suites/interlock", "Suite directory")
@@ -55,7 +112,7 @@ func suiteMatrixCmd() *cobra.Command {
 			}
 
 			matrix := ct.Matrix()
-			return writeMatrix(matrix, format)
+			return writeMatrix(matrix, format, os.Stdout)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "suites/interlock", "Suite directory")
@@ -98,13 +155,13 @@ func suiteGapsCmd() *cobra.Command {
 }
 
 // writeMatrix dispatches matrix output to the requested formatter.
-func writeMatrix(matrix interlocksuite.CoverageMatrix, format string) error {
+func writeMatrix(matrix interlocksuite.CoverageMatrix, format string, w io.Writer) error {
 	switch format {
 	case "json":
-		return interlocksuite.FormatJSON(matrix, os.Stdout)
+		return interlocksuite.FormatJSON(matrix, w)
 	case "md", "markdown":
-		return interlocksuite.FormatMarkdown(matrix, os.Stdout)
+		return interlocksuite.FormatMarkdown(matrix, w)
 	default:
-		return interlocksuite.FormatTable(matrix, os.Stdout)
+		return interlocksuite.FormatTable(matrix, w)
 	}
 }
