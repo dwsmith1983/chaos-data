@@ -2,13 +2,9 @@ package interlocksuite
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
-	interlocktypes "github.com/dwsmith1983/interlock/pkg/types"
-	interlockvalidation "github.com/dwsmith1983/interlock/pkg/validation"
 	"gopkg.in/yaml.v3"
 )
 
@@ -40,31 +36,48 @@ func (e *AWSInterlockEvaluator) EvaluateAfterInjection(_ context.Context, _, _, 
 // Local implementation
 // ---------------------------------------------------------------------------
 
-// LocalInterlockEvaluator embeds Interlock's validation engine for local testing.
-// It reads pipeline config and sensor state, evaluates Interlock validation rules,
-// and emits JOB_TRIGGERED or VALIDATION_EXHAUSTED events.
+// LocalInterlockEvaluator dispatches evaluation to a sequence of EvalModule
+// implementations. Each module inspects the pipeline config and emits events
+// for its domain. Modules execute sequentially and share mutable state (store +
+// eventWriter), so events emitted by earlier modules are visible to later ones.
 type LocalInterlockEvaluator struct {
 	store       adapter.StateStore
 	eventWriter *LocalEventReader
 	clock       adapter.Clock
+	modules     []EvalModule
+	sensorKeys  []string // populated per-scenario by SetSensorKeys
 }
 
-// NewLocalInterlockEvaluator returns a new LocalInterlockEvaluator.
+// NewLocalInterlockEvaluator returns a new LocalInterlockEvaluator with the
+// default module chain: Validation → Trigger.
 func NewLocalInterlockEvaluator(store adapter.StateStore, eventWriter *LocalEventReader, clock adapter.Clock) *LocalInterlockEvaluator {
-	return &LocalInterlockEvaluator{store: store, eventWriter: eventWriter, clock: clock}
+	return &LocalInterlockEvaluator{
+		store:       store,
+		eventWriter: eventWriter,
+		clock:       clock,
+		modules: []EvalModule{
+			NewValidationModule(),
+			NewTriggerModule(),
+		},
+	}
 }
 
-// EvaluateAfterInjection reads the pipeline config and sensor data from the
-// state store, evaluates Interlock validation rules, and emits a
-// JOB_TRIGGERED or VALIDATION_EXHAUSTED event based on the result.
-func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pipeline, _, _ string) error {
-	// 1. Read pipeline config.
+// SetSensorKeys sets the sensor keys from the current scenario's setup spec.
+// Must be called before EvaluateAfterInjection for each scenario.
+func (e *LocalInterlockEvaluator) SetSensorKeys(keys []string) {
+	e.sensorKeys = keys
+}
+
+// EvaluateAfterInjection reads the pipeline config, parses it to a generic
+// map, and dispatches evaluation to each registered module in order.
+func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pipeline, schedule, date string) error {
+	// Read pipeline config.
 	configBytes, err := e.store.ReadPipelineConfig(ctx, pipeline)
 	if err != nil {
 		return fmt.Errorf("read pipeline config: %w", err)
 	}
 	if configBytes == nil {
-		// No config — emit VALIDATION_EXHAUSTED (no rules to evaluate).
+		// No config — emit VALIDATION_EXHAUSTED (nothing to evaluate).
 		e.eventWriter.Emit(InterlockEventRecord{
 			PipelineID: pipeline,
 			EventType:  "VALIDATION_EXHAUSTED",
@@ -73,61 +86,28 @@ func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pi
 		return nil
 	}
 
-	// 2. Parse pipeline config to extract validation rules.
-	var config struct {
-		Validation struct {
-			Trigger string                          `yaml:"trigger" json:"trigger"`
-			Rules   []interlocktypes.ValidationRule `yaml:"rules" json:"rules"`
-		} `yaml:"validation" json:"validation"`
-	}
+	// Parse config to generic map for modules.
+	var config map[string]any
 	if err := yaml.Unmarshal(configBytes, &config); err != nil {
-		// Try JSON as fallback.
-		if err2 := json.Unmarshal(configBytes, &config); err2 != nil {
-			return fmt.Errorf("parse pipeline config: yaml=%v, json=%v", err, err2)
-		}
+		return fmt.Errorf("parse pipeline config: %w", err)
 	}
 
-	// 3. Build sensor data map from state store.
-	// Rule keys may include a SENSOR# prefix (interlock convention). Strip it
-	// before calling ReadSensor since the harness writes bare keys.
-	sensors := make(map[string]map[string]interface{})
-	for _, rule := range config.Validation.Rules {
-		bareKey := strings.TrimPrefix(rule.Key, "SENSOR#")
-		sensorData, err := e.store.ReadSensor(ctx, pipeline, bareKey)
-		if err != nil {
-			continue // sensor not found — will be nil in map
-		}
-		if sensorData.Key != "" {
-			data := make(map[string]interface{})
-			data["status"] = string(sensorData.Status)
-			for k, v := range sensorData.Metadata {
-				data[k] = v
-			}
-			sensors[rule.Key] = data
-		}
+	params := EvalParams{
+		Pipeline:    pipeline,
+		Config:      config,
+		Store:       e.store,
+		EventWriter: e.eventWriter,
+		Clock:       e.clock,
+		Schedule:    schedule,
+		Date:        date,
+		SensorKeys:  e.sensorKeys,
 	}
 
-	// 4. Evaluate rules using Interlock's validation engine.
-	result := interlockvalidation.EvaluateRules(
-		config.Validation.Trigger,
-		config.Validation.Rules,
-		sensors,
-		e.clock.Now(),
-	)
-
-	// 5. Emit appropriate event.
-	if result.Passed {
-		e.eventWriter.Emit(InterlockEventRecord{
-			PipelineID: pipeline,
-			EventType:  "JOB_TRIGGERED",
-			Timestamp:  e.clock.Now(),
-		})
-	} else {
-		e.eventWriter.Emit(InterlockEventRecord{
-			PipelineID: pipeline,
-			EventType:  "VALIDATION_EXHAUSTED",
-			Timestamp:  e.clock.Now(),
-		})
+	// Dispatch to modules in order.
+	for _, mod := range e.modules {
+		if err := mod.Evaluate(ctx, params); err != nil {
+			return fmt.Errorf("module %s: %w", mod.Name(), err)
+		}
 	}
 
 	return nil
