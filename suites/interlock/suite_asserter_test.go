@@ -105,7 +105,8 @@ func TestSuiteAsserter_Evaluate_NotExists(t *testing.T) {
 
 	ctx := context.Background()
 
-	// No events — not_exists should return true.
+	// No events — asserter returns raw presence (false = not found).
+	// The engine's polling loop handles the not_exists polarity.
 	ok, err := a.Evaluate(ctx, types.Assertion{
 		Type:      types.AssertInterlockEvent,
 		Target:    "JOB_TRIGGERED",
@@ -114,11 +115,11 @@ func TestSuiteAsserter_Evaluate_NotExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ok {
-		t.Fatal("expected true when no events emitted (not_exists)")
+	if ok {
+		t.Fatal("expected false (not found) when no events emitted")
 	}
 
-	// Emit event — not_exists should return false.
+	// Emit event — asserter returns true (found).
 	reader.Emit(InterlockEventRecord{
 		PipelineID: "suite-001-bronze-cdr",
 		EventType:  "JOB_TRIGGERED",
@@ -133,8 +134,8 @@ func TestSuiteAsserter_Evaluate_NotExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ok {
-		t.Fatal("expected false after matching event emitted (not_exists)")
+	if !ok {
+		t.Fatal("expected true (found) after matching event emitted")
 	}
 }
 
@@ -261,7 +262,8 @@ func TestRerunStateAsserter_Evaluate_NotExists(t *testing.T) {
 
 	ctx := context.Background()
 
-	// No reruns — not_exists should return true.
+	// No reruns — asserter returns raw presence (false = not found).
+	// The engine's polling loop handles the not_exists polarity.
 	ok, err := a.Evaluate(ctx, types.Assertion{
 		Type:      types.AssertRerunState,
 		Target:    "bronze-cdr",
@@ -270,11 +272,11 @@ func TestRerunStateAsserter_Evaluate_NotExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ok {
-		t.Fatal("expected true when no reruns recorded (not_exists)")
+	if ok {
+		t.Fatal("expected false (not found) when no reruns recorded")
 	}
 
-	// Write a rerun — not_exists should return false.
+	// Write a rerun — asserter returns true (found).
 	if err := store.WriteRerun(ctx, "suite-001-bronze-cdr", "default", "default", "timeout"); err != nil {
 		t.Fatalf("WriteRerun: %v", err)
 	}
@@ -287,8 +289,8 @@ func TestRerunStateAsserter_Evaluate_NotExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if ok {
-		t.Fatal("expected false after rerun recorded (not_exists)")
+	if !ok {
+		t.Fatal("expected true (found) after rerun recorded")
 	}
 }
 

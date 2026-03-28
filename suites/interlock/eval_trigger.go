@@ -3,6 +3,7 @@ package interlocksuite
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -37,14 +38,15 @@ func (m *TriggerModule) Evaluate(ctx context.Context, p EvalParams) error {
 		return nil
 	}
 
-	// Terminal trigger check: if trigger is already completed/failed,
-	// exit silently to let PostRun/Recovery modules handle it.
+	// Skip when trigger is already in a terminal or in-progress state.
+	// Terminal states are handled by PostRun/Recovery; "running" means the
+	// job is already executing so re-triggering would be incorrect.
 	triggerKey := adapter.TriggerKey{Pipeline: p.Pipeline, Schedule: "default", Date: "default"}
-	triggerStatus, err2 := p.Store.ReadTriggerStatus(ctx, triggerKey)
-	if err2 != nil {
-		return fmt.Errorf("trigger module: read trigger status: %w", err2)
+	triggerStatus, triggerErr := p.Store.ReadTriggerStatus(ctx, triggerKey)
+	if triggerErr != nil {
+		return fmt.Errorf("trigger module: read trigger status: %w", triggerErr)
 	}
-	if isTerminalStatus(triggerStatus) {
+	if isTerminalStatus(triggerStatus) || strings.ToLower(triggerStatus) == "running" {
 		return nil
 	}
 

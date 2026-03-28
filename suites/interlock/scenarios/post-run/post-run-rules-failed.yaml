@@ -21,6 +21,9 @@ setup:
     hourly-status:
       status: COMPLETE
       sensor_count: 1000
+    post-run-status:
+      status: PENDING
+      sensor_count: 0
 probability: 1.0
 safety:
   max_affected_pct: 100

@@ -102,7 +102,10 @@ func suiteRunCmd() *cobra.Command {
 
 			// 4. Create mutation registry with interlock mutations.
 			reg := mutation.NewRegistry()
-			if err := interlockadapter.RegisterAll(reg, store, interlockadapter.Config{}); err != nil {
+			if err := interlockadapter.RegisterAll(reg, store, interlockadapter.Config{
+				DefaultSchedule: "default",
+				DefaultDate:     "default",
+			}); err != nil {
 				return fmt.Errorf("register mutations: %w", err)
 			}
 

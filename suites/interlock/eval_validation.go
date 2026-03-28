@@ -27,14 +27,15 @@ func (m *ValidationModule) Name() string { return "validation" }
 // engine. Emits JOB_TRIGGERED if rules pass, VALIDATION_EXHAUSTED otherwise.
 // Silently returns nil when the config has no validation section.
 func (m *ValidationModule) Evaluate(ctx context.Context, p EvalParams) error {
-	// Terminal trigger check: if trigger is already completed/failed,
-	// exit silently to let PostRun/Recovery modules handle it.
+	// Skip when trigger is already in a terminal or in-progress state.
+	// Terminal states are handled by PostRun/Recovery; "running" means the
+	// job is already executing so re-validation would be incorrect.
 	triggerKey := adapter.TriggerKey{Pipeline: p.Pipeline, Schedule: "default", Date: "default"}
 	triggerStatus, err := p.Store.ReadTriggerStatus(ctx, triggerKey)
 	if err != nil {
 		return fmt.Errorf("validation module: read trigger status: %w", err)
 	}
-	if isTerminalStatus(triggerStatus) {
+	if isTerminalStatus(triggerStatus) || strings.ToLower(triggerStatus) == "running" {
 		return nil
 	}
 

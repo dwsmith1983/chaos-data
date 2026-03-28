@@ -11,7 +11,7 @@ mutation:
   type: interlock-stale-sensor
   params:
     pipeline: "bronze-cdr"
-    sensor_key: "trigger-status"
+    sensor_key: "hourly-status"
     age: "14400s"
 setup:
   pipeline: bronze-cdr

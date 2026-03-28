@@ -148,5 +148,8 @@ func enrichTriggerParams(params map[string]string, cfg Config) map[string]string
 	if schedule := enriched["schedule"]; schedule == "" && cfg.DefaultSchedule != "" {
 		enriched["schedule"] = cfg.DefaultSchedule
 	}
+	if date := enriched["date"]; date == "" && cfg.DefaultDate != "" {
+		enriched["date"] = cfg.DefaultDate
+	}
 	return enriched
 }

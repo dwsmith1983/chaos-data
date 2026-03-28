@@ -11,6 +11,7 @@ mutation:
   type: interlock-timestamp-forgery
   params:
     pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
     field: "schedule_time"
     offset: "-7200s"
 setup:

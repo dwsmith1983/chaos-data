@@ -134,7 +134,12 @@ func (m *PostRunModule) checkPostRunRules(ctx context.Context, p EvalParams, now
 		return true, nil
 	}
 
+	// Check metadata "status" first; fall back to the typed Status field when
+	// metadata is absent (e.g. phantom-sensor mutation strips known keys).
 	status := sd.Metadata["status"]
+	if status == "" {
+		status = string(sd.Status)
+	}
 	if strings.EqualFold(status, "COMPLETE") {
 		p.EventWriter.Emit(InterlockEventRecord{
 			PipelineID: p.Pipeline,

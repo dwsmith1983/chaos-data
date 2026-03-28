@@ -260,6 +260,130 @@ func TestSuiteRunner_RunScenario_DurationRecorded(t *testing.T) {
 	}
 }
 
+func TestEnrichMutationParams(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		params     map[string]string
+		nsPipeline string
+		want       map[string]string
+	}{
+		{
+			name:       "pipeline replaced with namespace",
+			params:     map[string]string{"pipeline": "bronze-cdr", "schedule": "daily", "date": "2026-03-28"},
+			nsPipeline: "bronze-cdr-001",
+			want:       map[string]string{"pipeline": "bronze-cdr-001", "schedule": "daily", "date": "2026-03-28"},
+		},
+		{
+			name:       "schedule and date defaulted when absent",
+			params:     map[string]string{"pipeline": "bronze-cdr"},
+			nsPipeline: "bronze-cdr-001",
+			want:       map[string]string{"pipeline": "bronze-cdr-001", "schedule": "default", "date": "default"},
+		},
+		{
+			name:       "schedule and date defaulted when empty string",
+			params:     map[string]string{"pipeline": "bronze-cdr", "schedule": "", "date": ""},
+			nsPipeline: "bronze-cdr-001",
+			want:       map[string]string{"pipeline": "bronze-cdr-001", "schedule": "default", "date": "default"},
+		},
+		{
+			name:       "existing schedule and date preserved",
+			params:     map[string]string{"pipeline": "silver-cdr", "schedule": "weekly", "date": "2026-01-01"},
+			nsPipeline: "silver-cdr-007",
+			want:       map[string]string{"pipeline": "silver-cdr-007", "schedule": "weekly", "date": "2026-01-01"},
+		},
+		{
+			name:       "empty nsPipeline does not replace pipeline",
+			params:     map[string]string{"pipeline": "gold-cdr", "schedule": "daily", "date": "2026-03-28"},
+			nsPipeline: "",
+			want:       map[string]string{"pipeline": "gold-cdr", "schedule": "daily", "date": "2026-03-28"},
+		},
+		{
+			name:       "pipeline key absent from params",
+			params:     map[string]string{"schedule": "daily", "date": "2026-03-28"},
+			nsPipeline: "bronze-cdr-001",
+			want:       map[string]string{"schedule": "daily", "date": "2026-03-28"},
+		},
+		{
+			name:       "nil params returns map with defaults",
+			params:     nil,
+			nsPipeline: "bronze-cdr-001",
+			want:       map[string]string{"schedule": "default", "date": "default"},
+		},
+		{
+			name:       "empty params returns map with defaults",
+			params:     map[string]string{},
+			nsPipeline: "bronze-cdr-001",
+			want:       map[string]string{"schedule": "default", "date": "default"},
+		},
+		{
+			name:       "original map not mutated when pipeline replaced",
+			params:     map[string]string{"pipeline": "bronze-cdr", "schedule": "daily", "date": "2026-03-28"},
+			nsPipeline: "bronze-cdr-042",
+			want:       map[string]string{"pipeline": "bronze-cdr-042", "schedule": "daily", "date": "2026-03-28"},
+		},
+		{
+			name:       "additional params preserved alongside defaults",
+			params:     map[string]string{"pipeline": "bronze-cdr", "region": "us-east-1"},
+			nsPipeline: "bronze-cdr-003",
+			want:       map[string]string{"pipeline": "bronze-cdr-003", "region": "us-east-1", "schedule": "default", "date": "default"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Capture a snapshot of the original map before the call so we can
+			// verify immutability regardless of which test case runs.
+			var originalSnapshot map[string]string
+			if tc.params != nil {
+				originalSnapshot = make(map[string]string, len(tc.params))
+				for k, v := range tc.params {
+					originalSnapshot[k] = v
+				}
+			}
+
+			got := enrichMutationParams(tc.params, tc.nsPipeline)
+
+			// Verify output matches expected.
+			if len(got) != len(tc.want) {
+				t.Errorf("len(got) = %d, want %d; got=%v want=%v", len(got), len(tc.want), got, tc.want)
+			}
+			for k, wantVal := range tc.want {
+				if gotVal, ok := got[k]; !ok {
+					t.Errorf("key %q missing from result", k)
+				} else if gotVal != wantVal {
+					t.Errorf("got[%q] = %q, want %q", k, gotVal, wantVal)
+				}
+			}
+
+			// Verify original map was not mutated.
+			if tc.params != nil {
+				for k, origVal := range originalSnapshot {
+					if tc.params[k] != origVal {
+						t.Errorf("original map mutated: params[%q] changed from %q to %q", k, origVal, tc.params[k])
+					}
+				}
+				if len(tc.params) != len(originalSnapshot) {
+					t.Errorf("original map length changed: was %d, now %d", len(originalSnapshot), len(tc.params))
+				}
+			}
+
+			// Verify result is a distinct map (not the same pointer).
+			// We do this by adding a sentinel key to the result and checking
+			// the original is unchanged.
+			if tc.params != nil {
+				got["__sentinel__"] = "yes"
+				if _, leaked := tc.params["__sentinel__"]; leaked {
+					t.Error("result shares underlying storage with input map")
+				}
+			}
+		})
+	}
+}
+
 func TestSuiteRunner_RunScenario_ResetsEventReader(t *testing.T) {
 	t.Parallel()
 	store := newTestSQLiteStore(t)

@@ -48,7 +48,9 @@ func (a *SuiteAsserter) Supports(at types.AssertionType) bool {
 }
 
 // Evaluate checks whether an interlock event matching the assertion's target
-// (event type) exists for the current pipeline.
+// (event type) exists for the current pipeline. Returns true when the event is
+// found and false when absent. The engine's polling loop handles condition
+// polarity (exists vs not_exists) so this method always returns raw presence.
 func (a *SuiteAsserter) Evaluate(ctx context.Context, assertion types.Assertion) (bool, error) {
 	a.mu.Lock()
 	pipeline := a.pipeline
@@ -58,16 +60,8 @@ func (a *SuiteAsserter) Evaluate(ctx context.Context, assertion types.Assertion)
 	if err != nil {
 		return false, fmt.Errorf("suite asserter: read events: %w", err)
 	}
-	found := len(events) > 0
 
-	switch assertion.Condition {
-	case types.CondExists:
-		return found, nil
-	case types.CondNotExists:
-		return !found, nil
-	default:
-		return false, fmt.Errorf("suite asserter: unsupported condition %q for interlock_event", assertion.Condition)
-	}
+	return len(events) > 0, nil
 }
 
 // ValidateTarget checks that the assertion target is non-empty.
@@ -198,14 +192,8 @@ func (a *RerunStateAsserter) Evaluate(ctx context.Context, assertion types.Asser
 		return false, fmt.Errorf("rerun asserter: count reruns: %w", err)
 	}
 
-	switch assertion.Condition {
-	case types.CondExists:
-		return count > 0, nil
-	case types.CondNotExists:
-		return count == 0, nil
-	default:
-		return false, fmt.Errorf("rerun asserter: unsupported condition %q for rerun_state", assertion.Condition)
-	}
+	// Return raw presence: the engine handles condition polarity.
+	return count > 0, nil
 }
 
 // ValidateTarget checks that the assertion target is non-empty.

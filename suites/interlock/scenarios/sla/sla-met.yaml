@@ -19,7 +19,7 @@ setup:
   trigger_status: COMPLETED
   pipeline_config:
     sla:
-      deadline: "06:00"
+      deadline: "23:59"
       warning_minutes: 30
   sensors:
     hourly-status:

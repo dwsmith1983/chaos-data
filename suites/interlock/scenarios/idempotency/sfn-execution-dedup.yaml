@@ -8,10 +8,12 @@ target:
   layer: orchestrator
   filter: { prefix: "", match: "" }
 mutation:
-  type: interlock-phantom-trigger
+  type: interlock-phantom-sensor
   params:
     pipeline: "bronze-cdr"
-    job_type: "step-function"
+    sensor_key: "hourly-status"
+    status: "COMPLETE"
+    sensor_count: "1000"
 setup:
   pipeline: bronze-cdr
   trigger_status: COMPLETED

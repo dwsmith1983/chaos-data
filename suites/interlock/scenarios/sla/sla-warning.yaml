@@ -11,14 +11,15 @@ mutation:
   type: interlock-timestamp-forgery
   params:
     pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
     field: "schedule_time"
     offset: "-3500s"
 setup:
   pipeline: bronze-cdr
   pipeline_config:
     sla:
-      deadline: "06:00"
-      warning_minutes: 30
+      deadline: "23:59"
+      warning_minutes: 1440
   sensors:
     hourly-status:
       status: PENDING

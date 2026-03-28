@@ -11,14 +11,15 @@ mutation:
   type: interlock-timestamp-forgery
   params:
     pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
     field: "last_schedule_time"
-    offset: "-86400s"
+    offset: "-172800s"
 setup:
   pipeline: bronze-cdr
   pipeline_config:
     schedule:
       type: inclusion_calendar
-      dates: ["2026-03-27"]
+      dates: ["$YESTERDAY", "$TODAY"]
       tolerance_minutes: 60
   sensors:
     hourly-status:

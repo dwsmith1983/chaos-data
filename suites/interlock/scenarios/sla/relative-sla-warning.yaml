@@ -11,8 +11,9 @@ mutation:
   type: interlock-timestamp-forgery
   params:
     pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
     field: "trigger_time"
-    offset: "-2700s"
+    offset: "-3000s"
 setup:
   pipeline: bronze-cdr
   trigger_status: RUNNING

@@ -19,6 +19,9 @@ type Config struct {
 	// DefaultSchedule is used when a trigger mutation has no "schedule" param.
 	DefaultSchedule string
 
+	// DefaultDate is used when a trigger mutation has no "date" param.
+	DefaultDate string
+
 	// SLAWindowMinutes is the SLA window in minutes. Defaults to 30.
 	SLAWindowMinutes int
 }

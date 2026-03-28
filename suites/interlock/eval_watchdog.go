@@ -251,7 +251,7 @@ func (m *WatchdogModule) evaluateJobTimeout(ctx context.Context, p EvalParams) (
 		Schedule: "default",
 		Date:     "default",
 	})
-	if err != nil || triggerStatus != "running" {
+	if err != nil || strings.ToLower(triggerStatus) != "running" {
 		return false, nil
 	}
 
@@ -302,7 +302,8 @@ func (m *WatchdogModule) evaluateStaleTrigger(ctx context.Context, p EvalParams)
 	if err != nil {
 		return nil
 	}
-	if triggerStatus != "running" && triggerStatus != "triggered" {
+	statusLower := strings.ToLower(triggerStatus)
+	if statusLower != "running" && statusLower != "triggered" {
 		return nil
 	}
 

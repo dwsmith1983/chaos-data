@@ -13,6 +13,7 @@ mutation:
     pipeline: "bronze-cdr"
     sensor_key: "hourly-status"
     sensor_count: "1500"
+    __baseline_sensor_count: "1000"
 setup:
   pipeline: bronze-cdr
   trigger_status: COMPLETED

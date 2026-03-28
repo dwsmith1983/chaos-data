@@ -124,6 +124,54 @@ func TestRecoveryModule(t *testing.T) {
 			wantEventType: "TRIGGER_RECOVERED",
 		},
 		{
+			name:      "JobFailed_KilledTrigger",
+			clockTime: baseTime,
+			config: map[string]any{
+				"recovery": map[string]any{
+					"max_retries":     float64(5),
+					"current_retries": float64(0),
+				},
+			},
+			triggerStatus: "killed",
+			wantEventType: "JOB_FAILED",
+		},
+		{
+			name:      "JobFailed_TimeoutTrigger",
+			clockTime: baseTime,
+			config: map[string]any{
+				"recovery": map[string]any{
+					"max_retries":     float64(5),
+					"current_retries": float64(0),
+				},
+			},
+			triggerStatus: "timeout",
+			wantEventType: "JOB_FAILED",
+		},
+		{
+			name:      "JobFailed_KilledUppercase",
+			clockTime: baseTime,
+			config: map[string]any{
+				"recovery": map[string]any{
+					"max_retries":     float64(3),
+					"current_retries": float64(1),
+				},
+			},
+			triggerStatus: "KILLED",
+			wantEventType: "JOB_FAILED",
+		},
+		{
+			name:      "JobFailed_TimeoutUppercase",
+			clockTime: baseTime,
+			config: map[string]any{
+				"recovery": map[string]any{
+					"max_retries":     float64(3),
+					"current_retries": float64(1),
+				},
+			},
+			triggerStatus: "TIMEOUT",
+			wantEventType: "JOB_FAILED",
+		},
+		{
 			name:      "NoRecoveryConfig_Skips",
 			clockTime: baseTime,
 			config: map[string]any{

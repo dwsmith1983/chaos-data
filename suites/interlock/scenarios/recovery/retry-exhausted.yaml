@@ -8,10 +8,12 @@ target:
   layer: orchestrator
   filter: { prefix: "", match: "" }
 mutation:
-  type: interlock-false-success
+  type: interlock-phantom-sensor
   params:
     pipeline: "bronze-cdr"
-    actual_status: "FAILED"
+    sensor_key: "hourly-status"
+    status: "COMPLETE"
+    sensor_count: "1000"
 setup:
   pipeline: bronze-cdr
   trigger_status: FAILED

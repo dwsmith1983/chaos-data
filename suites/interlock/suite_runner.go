@@ -93,7 +93,12 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 	// 1. Create harness with unique namespace.
 	h := NewHarness(r.store, r.clock, runID)
 
-	// 2. Setup prerequisite state.
+	// 2. Resolve date placeholders in pipeline config before setup.
+	if ss.Setup != nil && ss.Setup.PipelineConfig != nil {
+		resolveDatePlaceholders(ss.Setup.PipelineConfig, r.clock.Now())
+	}
+
+	// 3. Setup prerequisite state.
 	if ss.Setup != nil {
 		if err := h.Setup(ctx, *ss.Setup); err != nil {
 			result.Error = fmt.Sprintf("setup failed: %v", err)
@@ -102,17 +107,24 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		}
 	}
 
-	// 3. Reset event reader for isolation.
+	// 4. Reset event reader for isolation.
 	r.eventReader.Reset()
 
-	// 4. Build the object key — use namespaced pipeline if setup is present,
+	// 5. Build the object key — use namespaced pipeline if setup is present,
 	//    otherwise use the scenario name as a fallback key.
 	objKey := ss.Name
 	if ss.Setup != nil {
 		objKey = h.NamespacedPipeline(ss.Setup.Pipeline)
 	}
 
-	// 5. Set asserter pipeline for namespace isolation, then create engine.
+	// 6. Enrich mutation params: namespace pipeline, default schedule/date.
+	enrichedScenario := ss.Scenario
+	if ss.Setup != nil {
+		enrichedScenario.Mutation.Params = enrichMutationParams(
+			ss.Scenario.Mutation.Params, objKey)
+	}
+
+	// 7. Set asserter pipeline for namespace isolation, then create engine.
 	var engineOpts []engine.EngineOption
 	engineOpts = append(engineOpts, engine.WithClock(r.clock))
 	if r.asserter != nil {
@@ -133,11 +145,11 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		},
 		nil, // no data transport needed for state-layer mutations
 		r.registry,
-		[]scenario.Scenario{ss.Scenario},
+		[]scenario.Scenario{enrichedScenario},
 		engineOpts...,
 	)
 
-	// 6. Process (inject chaos).
+	// 8. Process (inject chaos).
 	_, err := eng.ProcessObject(ctx, types.DataObject{Key: objKey})
 	if err != nil {
 		result.Error = fmt.Sprintf("inject failed: %v", err)
@@ -146,7 +158,7 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		return result
 	}
 
-	// 7. Trigger Interlock evaluation.
+	// 9. Trigger Interlock evaluation.
 	if ss.Setup != nil {
 		var sensorKeys []string
 		for k := range ss.Setup.Sensors {
@@ -162,9 +174,9 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		}
 	}
 
-	// 8. Evaluate assertions.
+	// 10. Evaluate assertions.
 	if ss.Expected != nil {
-		assertResults := eng.EvaluateAssertions(ctx, []scenario.Scenario{ss.Scenario})
+		assertResults := eng.EvaluateAssertions(ctx, []scenario.Scenario{enrichedScenario})
 		allPassed := true
 		for _, ar := range assertResults {
 			if !ar.Satisfied {
@@ -180,12 +192,12 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		result.Passed = true
 	}
 
-	// 9. Record coverage.
+	// 11. Record coverage.
 	duration := r.clock.Now().Sub(start)
 	result.Duration = duration
 	r.coverage.Record(ss.Capability, result.Passed, duration)
 
-	// 10. Teardown.
+	// 12. Teardown.
 	_ = h.Teardown(ctx)
 
 	return result
@@ -194,4 +206,63 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 // Report returns the current coverage matrix.
 func (r *SuiteRunner) Report() CoverageMatrix {
 	return r.coverage.Matrix()
+}
+
+// resolveDatePlaceholders replaces $TODAY and $YESTERDAY placeholders in a
+// pipeline config map with concrete date strings derived from now.
+func resolveDatePlaceholders(config map[string]any, now time.Time) {
+	if config == nil {
+		return
+	}
+	today := now.Format("2006-01-02")
+	yesterday := now.AddDate(0, 0, -1).Format("2006-01-02")
+	resolveMapDates(config, today, yesterday)
+}
+
+// resolveMapDates recursively walks m, replacing "$TODAY" and "$YESTERDAY"
+// string values with concrete date strings.
+func resolveMapDates(m map[string]any, today, yesterday string) {
+	for k, v := range m {
+		switch tv := v.(type) {
+		case string:
+			if tv == "$TODAY" {
+				m[k] = today
+			} else if tv == "$YESTERDAY" {
+				m[k] = yesterday
+			}
+		case map[string]any:
+			resolveMapDates(tv, today, yesterday)
+		case []any:
+			for i, item := range tv {
+				if s, ok := item.(string); ok {
+					if s == "$TODAY" {
+						tv[i] = today
+					} else if s == "$YESTERDAY" {
+						tv[i] = yesterday
+					}
+				}
+			}
+		}
+	}
+}
+
+// enrichMutationParams returns a copy of params with the pipeline param
+// replaced by nsPipeline (if present) and schedule/date defaulted to "default"
+// when absent. This aligns mutation writes with the harness namespace so that
+// the evaluator reads from the same pipeline the mutation wrote to.
+func enrichMutationParams(params map[string]string, nsPipeline string) map[string]string {
+	out := make(map[string]string, len(params)+2)
+	for k, v := range params {
+		out[k] = v
+	}
+	if _, ok := out["pipeline"]; ok && nsPipeline != "" {
+		out["pipeline"] = nsPipeline
+	}
+	if out["schedule"] == "" {
+		out["schedule"] = "default"
+	}
+	if out["date"] == "" {
+		out["date"] = "default"
+	}
+	return out
 }

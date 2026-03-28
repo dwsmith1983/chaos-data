@@ -50,18 +50,8 @@ func (m *RecoveryModule) Evaluate(ctx context.Context, p EvalParams) error {
 		}
 	}
 
-	// No recovery config section → skip (unless we need to check poll timeout
-	// or trigger-recovered which are also gated below).
-	recoveryRaw, ok := p.Config["recovery"]
-	if !ok {
-		return nil
-	}
-	recoveryMap, ok := recoveryRaw.(map[string]any)
-	if !ok {
-		return nil
-	}
-
-	// Read trigger status.
+	// Read trigger status early so we can handle terminal states (killed,
+	// timeout) regardless of whether a recovery config section exists.
 	triggerStatus, err := p.Store.ReadTriggerStatus(ctx, adapter.TriggerKey{
 		Pipeline: p.Pipeline,
 		Schedule: "default",
@@ -73,6 +63,27 @@ func (m *RecoveryModule) Evaluate(ctx context.Context, p EvalParams) error {
 
 	statusLower := strings.ToLower(triggerStatus)
 	now := p.Clock.Now()
+
+	// Terminal trigger states that indicate job failure — fires regardless of
+	// whether a recovery config section exists.
+	if statusLower == "killed" || statusLower == "timeout" {
+		p.EventWriter.Emit(InterlockEventRecord{
+			PipelineID: p.Pipeline,
+			EventType:  "JOB_FAILED",
+			Timestamp:  now,
+		})
+		return nil
+	}
+
+	// No recovery config section → skip remaining recovery checks.
+	recoveryRaw, ok := p.Config["recovery"]
+	if !ok {
+		return nil
+	}
+	recoveryMap, ok := recoveryRaw.(map[string]any)
+	if !ok {
+		return nil
+	}
 
 	// 1. Poll timeout: trigger RUNNING and elapsed > poll_timeout_minutes.
 	if statusLower == "running" {
@@ -290,7 +301,7 @@ func (m *RecoveryModule) readSensorMetadataTime(ctx context.Context, p EvalParam
 func isTerminalRecoveryEvent(eventType string) bool {
 	switch eventType {
 	case "RERUN_REJECTED", "RETRY_EXHAUSTED", "JOB_POLL_EXHAUSTED",
-		"PIPELINE_EXCLUDED", "VALIDATION_EXHAUSTED":
+		"JOB_FAILED", "PIPELINE_EXCLUDED", "VALIDATION_EXHAUSTED":
 		return true
 	default:
 		return false
