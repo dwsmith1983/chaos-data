@@ -89,3 +89,19 @@ func JobEventSK(schedule, date, timestamp, runID string) string {
 func JobEventSKPrefix(schedule, date string) string {
 	return fmt.Sprintf("SCHED#%s#DATE#%s#", schedule, date)
 }
+
+// InterlockEventPK returns the partition key for an interlock event record.
+func InterlockEventPK(pipeline string) string {
+	return "PIPELINE#" + pipeline
+}
+
+// InterlockEventSK returns the sort key for an interlock event record.
+func InterlockEventSK(timestamp time.Time, eventType string) string {
+	return fmt.Sprintf("TS#%s#%s", timestamp.Format(time.RFC3339Nano), eventType)
+}
+
+// InterlockEventSKPrefix returns an empty string — interlock event queries use
+// FilterExpression on the eventType attribute, not a sort key prefix.
+func InterlockEventSKPrefix(_ string) string {
+	return ""
+}

@@ -84,11 +84,4 @@ func TestLocalEventReader_ConcurrentEmitRead(t *testing.T) {
 	<-done
 }
 
-func TestAWSEventReader_ReturnsError(t *testing.T) {
-	t.Parallel()
-	r := NewAWSEventReader()
-	_, err := r.ReadEvents(context.Background(), "pipe", "EVENT")
-	if err == nil {
-		t.Error("expected error from unimplemented AWS reader, got nil")
-	}
-}
+// AWSEventReader tests are in event_reader_aws_test.go.
