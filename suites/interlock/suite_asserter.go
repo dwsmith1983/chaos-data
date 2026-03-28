@@ -142,7 +142,7 @@ func (a *TriggerStateAsserter) Evaluate(ctx context.Context, assertion types.Ass
 	case types.CondStatusStopped:
 		return status == "stopped", nil
 	case types.CondIsStale:
-		return false, fmt.Errorf("trigger asserter: is_stale requires watchdog evaluator module (not yet implemented)")
+		return status == "stale", nil
 	default:
 		return false, fmt.Errorf("trigger asserter: unsupported condition %q", assertion.Condition)
 	}
