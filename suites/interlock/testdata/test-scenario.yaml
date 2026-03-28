@@ -1,0 +1,27 @@
+name: test-validation-equals
+description: Test scenario for unit testing
+category: state-consistency
+severity: moderate
+version: 1
+capability: validation/equals
+target:
+  layer: state
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-sensor
+  params:
+    pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
+    status: "PARTIAL"
+setup:
+  pipeline: bronze-cdr
+  trigger_status: COMPLETED
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
