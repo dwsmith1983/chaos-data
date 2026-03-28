@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	interlocktypes "github.com/dwsmith1983/interlock/pkg/types"
@@ -87,9 +88,12 @@ func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pi
 	}
 
 	// 3. Build sensor data map from state store.
+	// Rule keys may include a SENSOR# prefix (interlock convention). Strip it
+	// before calling ReadSensor since the harness writes bare keys.
 	sensors := make(map[string]map[string]interface{})
 	for _, rule := range config.Validation.Rules {
-		sensorData, err := e.store.ReadSensor(ctx, pipeline, rule.Key)
+		bareKey := strings.TrimPrefix(rule.Key, "SENSOR#")
+		sensorData, err := e.store.ReadSensor(ctx, pipeline, bareKey)
 		if err != nil {
 			continue // sensor not found — will be nil in map
 		}
