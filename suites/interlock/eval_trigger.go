@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -33,6 +34,14 @@ func (m *TriggerModule) Evaluate(ctx context.Context, p EvalParams) error {
 		return fmt.Errorf("trigger module: read existing events: %w", err)
 	}
 	if len(existing) > 0 {
+		return nil
+	}
+
+	// Terminal trigger check: if trigger is already completed/failed,
+	// exit silently to let PostRun/Recovery modules handle it.
+	triggerKey := adapter.TriggerKey{Pipeline: p.Pipeline, Schedule: "default", Date: "default"}
+	triggerStatus, _ := p.Store.ReadTriggerStatus(ctx, triggerKey)
+	if isTerminalStatus(triggerStatus) {
 		return nil
 	}
 

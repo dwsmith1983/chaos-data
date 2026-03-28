@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	interlocktypes "github.com/dwsmith1983/interlock/pkg/types"
 	interlockvalidation "github.com/dwsmith1983/interlock/pkg/validation"
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,14 @@ func (m *ValidationModule) Name() string { return "validation" }
 // engine. Emits JOB_TRIGGERED if rules pass, VALIDATION_EXHAUSTED otherwise.
 // Silently returns nil when the config has no validation section.
 func (m *ValidationModule) Evaluate(ctx context.Context, p EvalParams) error {
+	// Terminal trigger check: if trigger is already completed/failed,
+	// exit silently to let PostRun/Recovery modules handle it.
+	triggerKey := adapter.TriggerKey{Pipeline: p.Pipeline, Schedule: "default", Date: "default"}
+	triggerStatus, _ := p.Store.ReadTriggerStatus(ctx, triggerKey)
+	if isTerminalStatus(triggerStatus) {
+		return nil
+	}
+
 	// Extract validation section from config map, then marshal only that
 	// sub-map for typed deserialization into interlock rule structs.
 	valRaw, ok := p.Config["validation"]

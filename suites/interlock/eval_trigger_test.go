@@ -148,3 +148,52 @@ func TestTriggerModule(t *testing.T) {
 		})
 	}
 }
+
+func TestTriggerModule_TerminalTrigger_Silent(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 3, 28, 10, 0, 0, 0, time.UTC))
+	reader := NewLocalEventReader()
+	mod := NewTriggerModule()
+
+	ctx := context.Background()
+	pipeline := "trigger-test-terminal"
+
+	// Write ready sensors so normally JOB_TRIGGERED would fire.
+	if err := store.WriteSensor(ctx, pipeline, "hourly-status", adapter.SensorData{
+		Pipeline: pipeline,
+		Key:      "hourly-status",
+		Status:   types.SensorStatusComplete,
+		Metadata: map[string]string{"status": "COMPLETE"},
+	}); err != nil {
+		t.Fatalf("WriteSensor: %v", err)
+	}
+
+	// Set trigger to terminal state — module should exit silently.
+	trigKey := adapter.TriggerKey{Pipeline: pipeline, Schedule: "default", Date: "default"}
+	if err := store.WriteTriggerStatus(ctx, trigKey, "completed"); err != nil {
+		t.Fatalf("WriteTriggerStatus: %v", err)
+	}
+
+	config := map[string]any{
+		"job": map[string]any{"type": "command"},
+	}
+
+	err := mod.Evaluate(ctx, EvalParams{
+		Pipeline:    pipeline,
+		Config:      config,
+		Store:       store,
+		EventWriter: reader,
+		Clock:       clk,
+		SensorKeys:  []string{"hourly-status"},
+	})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+
+	// No events should be emitted — terminal trigger silences the module.
+	events, _ := reader.ReadEvents(ctx, pipeline, "")
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events for terminal trigger, got %d: %+v", len(events), events)
+	}
+}

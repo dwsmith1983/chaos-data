@@ -48,15 +48,21 @@ type LocalInterlockEvaluator struct {
 }
 
 // NewLocalInterlockEvaluator returns a new LocalInterlockEvaluator with the
-// default module chain: Validation → Trigger.
+// default module chain: Safety → SLA → Watchdog → Validation → Trigger →
+// PostRun → Recovery.
 func NewLocalInterlockEvaluator(store adapter.StateStore, eventWriter *LocalEventReader, clock adapter.Clock) *LocalInterlockEvaluator {
 	return &LocalInterlockEvaluator{
 		store:       store,
 		eventWriter: eventWriter,
 		clock:       clock,
 		modules: []EvalModule{
+			NewSafetyModule(),
+			NewSLAModule(),
+			NewWatchdogModule(),
 			NewValidationModule(),
 			NewTriggerModule(),
+			NewPostRunModule(),
+			NewRecoveryModule(),
 		},
 	}
 }
