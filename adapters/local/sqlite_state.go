@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -113,7 +114,7 @@ func (s *SQLiteState) ReadSensor(ctx context.Context, pipeline, key string) (ada
 		pipeline, key,
 	)
 	if err := row.Scan(&status, &lastUpdated, &metaJSON); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return adapter.SensorData{}, nil
 		}
 		return adapter.SensorData{}, fmt.Errorf("read sensor: %w", err)
@@ -187,7 +188,7 @@ func (s *SQLiteState) ReadTriggerStatus(ctx context.Context, key adapter.Trigger
 		key.Pipeline, key.Schedule, key.Date,
 	)
 	if err := row.Scan(&status); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", fmt.Errorf("read trigger status: %w", err)
@@ -303,7 +304,7 @@ func (s *SQLiteState) ReadPipelineConfig(ctx context.Context, pipeline string) (
 		pipeline,
 	)
 	if err := row.Scan(&config); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read pipeline config: %w", err)
@@ -321,30 +322,20 @@ func (s *SQLiteState) DeleteByPrefix(ctx context.Context, prefix string) error {
 	}
 	defer tx.Rollback() //nolint:errcheck // rollback after commit is a no-op
 
-	tables := []struct {
-		table  string
-		column string
-	}{
-		{"sensors", "pipeline"},
-		{"triggers", "pipeline"},
-		{"pipeline_configs", "pipeline"},
-		{"reruns", "pipeline"},
-		{"job_events", "pipeline"},
+	stmts := []string{
+		`DELETE FROM sensors WHERE pipeline LIKE ? || '%'`,
+		`DELETE FROM triggers WHERE pipeline LIKE ? || '%'`,
+		`DELETE FROM pipeline_configs WHERE pipeline LIKE ? || '%'`,
+		`DELETE FROM reruns WHERE pipeline LIKE ? || '%'`,
+		`DELETE FROM job_events WHERE pipeline LIKE ? || '%'`,
 	}
-
-	for _, tbl := range tables {
-		if _, err := tx.ExecContext(ctx,
-			fmt.Sprintf(`DELETE FROM %s WHERE %s LIKE ? || '%%'`, tbl.table, tbl.column),
-			prefix,
-		); err != nil {
-			return fmt.Errorf("delete by prefix: %s: %w", tbl.table, err)
+	for _, stmt := range stmts {
+		if _, err := tx.ExecContext(ctx, stmt, prefix); err != nil {
+			return fmt.Errorf("delete by prefix: %w", err)
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("delete by prefix: commit: %w", err)
-	}
-	return nil
+	return tx.Commit()
 }
 
 // CountReruns returns the number of reruns for a pipeline/schedule/date.

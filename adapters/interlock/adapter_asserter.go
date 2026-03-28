@@ -100,6 +100,10 @@ func (a *AdapterAsserter) evalSensor(ctx context.Context, assertion types.Assert
 		return sensor.Status == types.SensorStatusReady, nil
 	case types.CondIsPending:
 		return sensor.Status == types.SensorStatusPending, nil
+	case types.CondStatusRunning:
+		return sensor.Status == "running", nil
+	case types.CondStatusStopped:
+		return sensor.Status == "stopped", nil
 	case types.CondExists:
 		return sensor.Key != "", nil
 	default:
@@ -129,6 +133,10 @@ func (a *AdapterAsserter) evalTrigger(ctx context.Context, assertion types.Asser
 		expected = "timeout"
 	case types.CondWasTriggered:
 		expected = "triggered"
+	case types.CondStatusRunning:
+		expected = "running"
+	case types.CondStatusStopped:
+		expected = "stopped"
 	default:
 		return false, fmt.Errorf("unsupported trigger condition: %q", assertion.Condition)
 	}

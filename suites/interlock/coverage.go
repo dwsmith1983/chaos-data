@@ -3,7 +3,9 @@ package interlocksuite
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -54,6 +56,7 @@ type CoverageRegistry struct {
 
 // CoverageTracker loads the registry and tracks scenario results.
 type CoverageTracker struct {
+	mu       sync.RWMutex
 	registry CoverageRegistry
 	results  map[string]*CapabilityResult // keyed by "category/id"
 }
@@ -97,6 +100,9 @@ func (ct *CoverageTracker) Record(capability string, passed bool, duration time.
 		return
 	}
 
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
 	result, ok := ct.results[capability]
 	if !ok {
 		return
@@ -111,7 +117,11 @@ func (ct *CoverageTracker) Record(capability string, passed bool, duration time.
 }
 
 // Matrix returns the full coverage matrix with computed statuses.
+// Results are sorted deterministically by Category + "/" + Capability.ID.
 func (ct *CoverageTracker) Matrix() CoverageMatrix {
+	ct.mu.RLock()
+	defer ct.mu.RUnlock()
+
 	matrix := CoverageMatrix{
 		Results: make([]CapabilityResult, 0, len(ct.results)),
 	}
@@ -149,6 +159,12 @@ func (ct *CoverageTracker) Matrix() CoverageMatrix {
 			matrix.Untested++
 		}
 	}
+
+	sort.Slice(matrix.Results, func(i, j int) bool {
+		ki := matrix.Results[i].Category + "/" + matrix.Results[i].Capability.ID
+		kj := matrix.Results[j].Category + "/" + matrix.Results[j].Capability.ID
+		return ki < kj
+	})
 
 	return matrix
 }

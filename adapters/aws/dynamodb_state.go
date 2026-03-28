@@ -247,7 +247,8 @@ func (s *DynamoDBState) ReadPipelineConfig(ctx context.Context, pipeline string)
 }
 
 // DeleteByPrefix removes all state entries whose PK begins with the given prefix.
-// It performs a Scan with a filter expression, then deletes matches in batches of 25.
+// It performs a paginated Scan with a filter expression, then deletes matches in
+// batches of 25.
 func (s *DynamoDBState) DeleteByPrefix(ctx context.Context, prefix string) error {
 	filterExpr := "begins_with(PK, :prefix)"
 	projExpr := "PK, SK"
@@ -260,23 +261,32 @@ func (s *DynamoDBState) DeleteByPrefix(ctx context.Context, prefix string) error
 		},
 	}
 
-	out, err := s.api.Scan(ctx, input)
-	if err != nil {
-		return fmt.Errorf("dynamodb delete by prefix scan: %w", err)
+	// Collect all matching items across paginated Scan responses.
+	var allItems []map[string]dynamodbtypes.AttributeValue
+	for {
+		out, err := s.api.Scan(ctx, input)
+		if err != nil {
+			return fmt.Errorf("dynamodb delete by prefix scan: %w", err)
+		}
+		allItems = append(allItems, out.Items...)
+		if out.LastEvaluatedKey == nil {
+			break
+		}
+		input.ExclusiveStartKey = out.LastEvaluatedKey
 	}
 
-	if len(out.Items) == 0 {
+	if len(allItems) == 0 {
 		return nil
 	}
 
 	// Delete in batches of 25 (DynamoDB BatchWriteItem limit).
 	const batchSize = 25
-	for i := 0; i < len(out.Items); i += batchSize {
+	for i := 0; i < len(allItems); i += batchSize {
 		end := i + batchSize
-		if end > len(out.Items) {
-			end = len(out.Items)
+		if end > len(allItems) {
+			end = len(allItems)
 		}
-		batch := out.Items[i:end]
+		batch := allItems[i:end]
 
 		requests := make([]dynamodbtypes.WriteRequest, 0, len(batch))
 		for _, item := range batch {
