@@ -56,15 +56,19 @@ func suiteRunCmd() *cobra.Command {
 				return fmt.Errorf("register mutations: %w", err)
 			}
 
-			// 5. Create event reader and evaluator.
+			// 5. Create event reader, evaluator, and asserter.
 			eventReader := interlocksuite.NewLocalEventReader()
 			evaluator := interlocksuite.NewLocalInterlockEvaluator(store, eventReader, clk)
+			suiteAsserter := interlocksuite.NewSuiteAsserter(eventReader)
+			triggerAsserter := interlocksuite.NewTriggerStateAsserter(store)
+			compositeAsserter := interlocksuite.NewCompositeAsserter(suiteAsserter, triggerAsserter)
 
 			// 6. Create suite runner.
 			runner := interlocksuite.NewSuiteRunner(store, reg, ct,
 				interlocksuite.WithSuiteClock(clk),
 				interlocksuite.WithSuiteEvaluator(evaluator),
 				interlocksuite.WithSuiteEventReader(eventReader),
+				interlocksuite.WithSuiteAsserter(compositeAsserter),
 			)
 
 			// 7. Load and run all scenarios.

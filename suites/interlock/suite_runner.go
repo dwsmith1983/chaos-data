@@ -30,6 +30,7 @@ type SuiteRunner struct {
 	registry    *mutation.Registry
 	evaluator   InterlockEvaluator
 	eventReader InterlockEventReader
+	asserter    *CompositeAsserter
 	coverage    *CoverageTracker
 	runCounter  int
 }
@@ -50,6 +51,11 @@ func WithSuiteEvaluator(e InterlockEvaluator) SuiteOption {
 // WithSuiteEventReader sets the event reader used by the suite runner.
 func WithSuiteEventReader(er InterlockEventReader) SuiteOption {
 	return func(r *SuiteRunner) { r.eventReader = er }
+}
+
+// WithSuiteAsserter sets the composite asserter used by the suite runner.
+func WithSuiteAsserter(a *CompositeAsserter) SuiteOption {
+	return func(r *SuiteRunner) { r.asserter = a }
 }
 
 // NewSuiteRunner creates a SuiteRunner with the given dependencies.
@@ -99,7 +105,26 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 	// 3. Reset event reader for isolation.
 	r.eventReader.Reset()
 
-	// 4. Create engine with scenario.
+	// 4. Build the object key — use namespaced pipeline if setup is present,
+	//    otherwise use the scenario name as a fallback key.
+	objKey := ss.Name
+	if ss.Setup != nil {
+		objKey = h.NamespacedPipeline(ss.Setup.Pipeline)
+	}
+
+	// 5. Set asserter pipeline for namespace isolation, then create engine.
+	var engineOpts []engine.EngineOption
+	engineOpts = append(engineOpts, engine.WithClock(r.clock))
+	if r.asserter != nil {
+		// Update child asserters' pipeline to the current namespaced pipeline.
+		for _, a := range r.asserter.asserters {
+			if ps, ok := a.(PipelineSettable); ok {
+				ps.SetPipeline(objKey)
+			}
+		}
+		engineOpts = append(engineOpts, engine.WithAsserter(r.asserter))
+	}
+
 	eng := engine.New(
 		types.EngineConfig{
 			Mode:               "deterministic",
@@ -109,15 +134,8 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		nil, // no data transport needed for state-layer mutations
 		r.registry,
 		[]scenario.Scenario{ss.Scenario},
-		engine.WithClock(r.clock),
+		engineOpts...,
 	)
-
-	// 5. Build the object key — use namespaced pipeline if setup is present,
-	//    otherwise use the scenario name as a fallback key.
-	objKey := ss.Name
-	if ss.Setup != nil {
-		objKey = h.NamespacedPipeline(ss.Setup.Pipeline)
-	}
 
 	// 6. Process (inject chaos).
 	_, err := eng.ProcessObject(ctx, types.DataObject{Key: objKey})
