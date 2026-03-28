@@ -1,0 +1,37 @@
+name: sla-warning-suppression
+description: SLA warning suppressed when breach has already fired
+category: orchestrator
+severity: moderate
+version: 1
+capability: idempotency/sla_warning_suppression
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-timestamp-forgery
+  params:
+    pipeline: "bronze-cdr"
+    field: "schedule_time"
+    offset: "-7200s"
+setup:
+  pipeline: bronze-cdr
+  pipeline_config:
+    sla:
+      deadline: "06:00"
+      warning_minutes: 30
+      breach_fired: true
+  sensors:
+    hourly-status:
+      status: PENDING
+      sensor_count: 0
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: true
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "SLA_WARNING"
+      condition: not_exists

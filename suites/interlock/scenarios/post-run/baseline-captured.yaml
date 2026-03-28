@@ -1,0 +1,34 @@
+name: baseline-captured
+description: Baseline snapshot successfully recorded after job trigger
+category: state-consistency
+severity: low
+version: 1
+capability: post_run/post_run_baseline_captured
+target:
+  layer: state
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-sensor
+  params:
+    pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
+    status: "COMPLETE"
+    sensor_count: "1000"
+setup:
+  pipeline: bronze-cdr
+  trigger_status: COMPLETED
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "POST_RUN_BASELINE_CAPTURED"
+      condition: exists

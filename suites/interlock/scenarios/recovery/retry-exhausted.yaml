@@ -1,0 +1,36 @@
+name: retry-exhausted
+description: All maxRetries consumed without successful completion
+category: orchestrator
+severity: critical
+version: 1
+capability: recovery/retry_exhausted
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-false-success
+  params:
+    pipeline: "bronze-cdr"
+    actual_status: "FAILED"
+setup:
+  pipeline: bronze-cdr
+  trigger_status: FAILED
+  pipeline_config:
+    recovery:
+      max_retries: 3
+      current_retries: 3
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "RETRY_EXHAUSTED"
+      condition: exists

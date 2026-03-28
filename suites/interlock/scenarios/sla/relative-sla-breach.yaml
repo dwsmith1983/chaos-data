@@ -1,0 +1,37 @@
+name: relative-sla-breach
+description: Job duration exceeds maxDuration threshold
+category: orchestrator
+severity: critical
+version: 1
+capability: sla/relative_sla_breach
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-timestamp-forgery
+  params:
+    pipeline: "bronze-cdr"
+    field: "trigger_time"
+    offset: "-3900s"
+setup:
+  pipeline: bronze-cdr
+  trigger_status: RUNNING
+  pipeline_config:
+    sla:
+      max_duration_minutes: 60
+      warning_pct: 80
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: true
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "RELATIVE_SLA_BREACH"
+      condition: exists

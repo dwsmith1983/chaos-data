@@ -1,0 +1,37 @@
+name: stale-trigger
+description: Trigger stuck in non-terminal state beyond expected window
+category: orchestrator
+severity: severe
+version: 1
+capability: watchdog/stale_trigger
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-stale-sensor
+  params:
+    pipeline: "bronze-cdr"
+    sensor_key: "trigger-status"
+    age: "14400s"
+setup:
+  pipeline: bronze-cdr
+  trigger_status: RUNNING
+  pipeline_config:
+    job:
+      type: step-function
+      stale_threshold_minutes: 120
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: trigger_state
+      target: "bronze-cdr"
+      condition: is_stale

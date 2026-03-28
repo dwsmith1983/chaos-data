@@ -1,0 +1,37 @@
+name: sla-alert-suppression-terminal
+description: SLA alert suppressed when job has already reached terminal state
+category: orchestrator
+severity: moderate
+version: 1
+capability: idempotency/sla_alert_suppression_terminal
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-timestamp-forgery
+  params:
+    pipeline: "bronze-cdr"
+    field: "schedule_time"
+    offset: "-7200s"
+setup:
+  pipeline: bronze-cdr
+  trigger_status: COMPLETED
+  pipeline_config:
+    sla:
+      deadline: "06:00"
+      warning_minutes: 30
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: true
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "SLA_BREACH"
+      condition: not_exists

@@ -1,0 +1,35 @@
+name: phantom-trigger-command
+description: Fire command trigger without dependencies met; validation should block it
+category: orchestrator
+severity: severe
+version: 1
+capability: trigger_types/command
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-trigger
+  params:
+    pipeline: "bronze-cdr"
+    job_type: "command"
+setup:
+  pipeline: bronze-cdr
+  pipeline_config:
+    job:
+      type: command
+      command: "/opt/etl/run.sh"
+  sensors:
+    hourly-status:
+      status: PENDING
+      sensor_count: 0
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "VALIDATION_EXHAUSTED"
+      condition: exists

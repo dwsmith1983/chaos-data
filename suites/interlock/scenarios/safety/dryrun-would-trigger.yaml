@@ -1,0 +1,38 @@
+name: dryrun-would-trigger
+description: Dry-run mode emits would-trigger event without starting real job
+category: orchestrator
+severity: moderate
+version: 1
+capability: safety/dryrun_would_trigger
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-sensor
+  params:
+    pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
+    status: "COMPLETE"
+    sensor_count: "1000"
+setup:
+  pipeline: bronze-cdr
+  pipeline_config:
+    dryrun: true
+    job:
+      type: step-function
+      state_machine_arn: "arn:aws:states:us-east-1:123456789:stateMachine:bronze-cdr"
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "DRY_RUN_WOULD_TRIGGER"
+      condition: exists

@@ -105,78 +105,78 @@ capabilities:
   watchdog:
     - id: schedule_missed
       description: Cron schedule missed
-      scenarios: []
+      scenarios: [watchdog/schedule-missed.yaml]
     - id: irregular_schedule_missed
       description: Inclusion calendar date missed
-      scenarios: []
+      scenarios: [watchdog/irregular-schedule-missed.yaml]
     - id: sensor_deadline_expired
       description: Trigger sensor deadline passed without arrival
-      scenarios: []
+      scenarios: [watchdog/sensor-deadline-expired.yaml]
     - id: sfn_timeout
       description: Step Functions execution timeout
-      scenarios: []
+      scenarios: [watchdog/sfn-timeout.yaml]
     - id: stale_trigger
       description: Trigger stuck in non-terminal state
-      scenarios: []
+      scenarios: [watchdog/stale-trigger.yaml]
 
   recovery:
     - id: rerun_accepted
       description: Drift or manual rerun initiated
-      scenarios: []
+      scenarios: [recovery/rerun-accepted.yaml]
     - id: rerun_rejected
       description: Circuit breaker blocked rerun (maxDriftReruns/maxManualReruns)
-      scenarios: []
+      scenarios: [recovery/rerun-rejected.yaml]
     - id: retry_exhausted
       description: maxRetries exceeded
-      scenarios: []
+      scenarios: [recovery/retry-exhausted.yaml]
     - id: job_poll_exhausted
       description: Job poll window exceeded
-      scenarios: []
+      scenarios: [recovery/job-poll-exhausted.yaml]
     - id: job_failure_retry
       description: Automatic retry on job failure (maxCodeRetries)
-      scenarios: []
+      scenarios: [recovery/job-failure-retry.yaml]
     - id: trigger_recovered
       description: Stale trigger recovered
-      scenarios: []
+      scenarios: [recovery/trigger-recovered.yaml]
 
   idempotency:
     - id: sfn_execution_dedup
       description: Same pipeline+schedule+date no duplicate execution
-      scenarios: []
+      scenarios: [idempotency/sfn-execution-dedup.yaml]
     - id: sla_warning_suppression
       description: Warning suppressed if breach already fired
-      scenarios: []
+      scenarios: [idempotency/sla-warning-suppression.yaml]
     - id: sla_alert_suppression_terminal
       description: Alert suppressed when job completed/failed/timeout
-      scenarios: []
+      scenarios: [idempotency/sla-alert-suppression-terminal.yaml]
     - id: dryrun_marker_dedup
       description: Idempotent first-occurrence recording
-      scenarios: []
+      scenarios: [idempotency/dryrun-marker-dedup.yaml]
 
   safety:
     - id: pipeline_excluded
       description: Calendar exclusion enforced
-      scenarios: []
+      scenarios: [safety/pipeline-excluded.yaml]
     - id: inclusion_calendar
       description: Only runs on specified dates
-      scenarios: []
+      scenarios: [safety/inclusion-calendar.yaml]
     - id: dryrun_would_trigger
       description: Dry-run event emission without real job
-      scenarios: []
+      scenarios: [safety/dryrun-would-trigger.yaml]
     - id: dryrun_detection
       description: Dry-run post-run detection events
-      scenarios: []
+      scenarios: [safety/dryrun-detection.yaml]
     - id: dryrun_absence
       description: Real operational events NOT emitted in dry-run mode
-      scenarios: []
+      scenarios: [safety/dryrun-absence.yaml]
 
   job_lifecycle:
     - id: job_triggered
       description: Job successfully triggered
-      scenarios: []
+      scenarios: [job-lifecycle/job-triggered.yaml]
     - id: job_terminal
       description: Job completed or failed terminal states
-      scenarios: []
+      scenarios: [job-lifecycle/job-terminal.yaml]
     - id: validation_exhausted
       description: Evaluation window expired without rules passing
-      scenarios: []
+      scenarios: [job-lifecycle/validation-exhausted.yaml]

@@ -1,0 +1,37 @@
+name: rerun-accepted
+description: Drift or manual rerun initiated and accepted by circuit breaker
+category: orchestrator
+severity: moderate
+version: 1
+capability: recovery/rerun_accepted
+target:
+  layer: orchestrator
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-sensor
+  params:
+    pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
+    sensor_count: "1500"
+setup:
+  pipeline: bronze-cdr
+  trigger_status: COMPLETED
+  pipeline_config:
+    recovery:
+      max_drift_reruns: 3
+      current_drift_reruns: 0
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "RERUN_ACCEPTED"
+      condition: exists
