@@ -1,0 +1,30 @@
+name: sla-warning-then-breach
+description: Approach SLA deadline to trigger warning, then exceed it to trigger breach
+capabilities:
+  - sla/sla_warning
+  - sla/sla_breach
+steps:
+  - name: setup-pipeline-with-sla
+    setup:
+      pipeline: bronze-cdr
+      pipeline_config:
+        sla:
+          deadline: "06:00"
+          warning_minutes: 30
+      sensors:
+        hourly-status:
+          status: PENDING
+          sensor_count: 0
+  - name: inject-sla-warning
+    scenario: scenarios/sla/sla-warning.yaml
+    assert:
+      - type: interlock_event
+        target: "SLA_WARNING"
+        condition: exists
+  - wait: "10s"
+  - name: inject-sla-breach
+    scenario: scenarios/sla/sla-breach.yaml
+    assert:
+      - type: interlock_event
+        target: "SLA_BREACH"
+        condition: exists

@@ -1,0 +1,28 @@
+name: drift-rerun-circuit-breaker
+description: Inject drift, verify rerun fires, inject again, verify circuit breaker rejects
+capabilities:
+  - post_run/post_run_drift
+  - recovery/rerun_accepted
+  - recovery/rerun_rejected
+steps:
+  - name: setup-completed-pipeline
+    setup:
+      pipeline: silver-cdr-day
+      trigger_status: COMPLETED
+      sensors:
+        hourly-status:
+          status: COMPLETE
+          sensor_count: 1000
+  - name: inject-drift
+    scenario: scenarios/post-run/drift-count-changed.yaml
+    assert:
+      - type: interlock_event
+        target: "POST_RUN_DRIFT"
+        condition: exists
+  - wait: "5s"
+  - name: inject-drift-again
+    scenario: scenarios/post-run/drift-count-changed.yaml
+    assert:
+      - type: interlock_event
+        target: "RERUN_REJECTED"
+        condition: exists

@@ -1,0 +1,49 @@
+name: validation-fail-retry-exhaust
+description: Inject validation failure, verify retry, then exhaust retries
+capabilities:
+  - validation/equals
+  - recovery/retry_exhausted
+steps:
+  - name: setup-pipeline-with-validation
+    setup:
+      pipeline: bronze-cdr
+      trigger_status: COMPLETED
+      pipeline_config:
+        pipeline:
+          id: bronze-cdr
+        validation:
+          trigger: "ALL"
+          rules:
+            - key: "SENSOR#hourly-status"
+              check: equals
+              field: status
+              value: "COMPLETE"
+        recovery:
+          max_retries: 3
+          current_retries: 0
+        job:
+          type: command
+          config:
+            command: "echo test"
+        schedule:
+          evaluation:
+            window: "1h"
+            interval: "5m"
+      sensors:
+        hourly-status:
+          status: COMPLETE
+          sensor_count: 1000
+  - name: inject-validation-failure
+    scenario: scenarios/validation/equals-fail-wrong-value.yaml
+    assert:
+      - type: interlock_event
+        target: "VALIDATION_EXHAUSTED"
+        condition: exists
+  - wait: "5s"
+  - name: exhaust-retries
+    scenario: scenarios/recovery/retry-exhausted.yaml
+    continue_on_failure: true
+    assert:
+      - type: interlock_event
+        target: "RETRY_EXHAUSTED"
+        condition: exists

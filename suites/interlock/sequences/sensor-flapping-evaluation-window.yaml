@@ -1,0 +1,29 @@
+name: sensor-flapping-evaluation-window
+description: Sensor alternates between stale and fresh within evaluation window; verify watchdog detects deadline expiry
+capabilities:
+  - watchdog/sensor_deadline_expired
+  - watchdog/stale_trigger
+steps:
+  - name: setup-sensor-with-deadline
+    setup:
+      pipeline: bronze-cdr
+      pipeline_config:
+        sensor_deadline: "05:00"
+        schedule:
+          evaluation:
+            window: "2h"
+            interval: "5m"
+      sensors:
+        hourly-status:
+          status: PENDING
+          sensor_count: 0
+  - name: inject-stale-sensor
+    scenario: scenarios/watchdog/sensor-deadline-expired.yaml
+    assert:
+      - type: interlock_event
+        target: "SENSOR_DEADLINE_EXPIRED"
+        condition: exists
+  - wait: "10s"
+  - name: inject-stale-trigger
+    scenario: scenarios/watchdog/stale-trigger.yaml
+    continue_on_failure: true
