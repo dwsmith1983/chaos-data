@@ -28,7 +28,7 @@ capabilities:
       scenarios: [validation/age-lt-stale-sensor.yaml]
     - id: mode_all
       description: ALL validation rules must pass
-      scenarios: []
+      scenarios: [validation/mode-all-full-pass.yaml]
     - id: mode_any
       description: ANY validation rule must pass
       scenarios: [validation/mode-any-partial-pass.yaml]
