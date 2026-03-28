@@ -1,0 +1,43 @@
+name: validation-gte-below-threshold
+description: Phantom sensor writes sensor_count 5 when rule expects gte 10 — should exhaust validation
+category: state-consistency
+severity: moderate
+version: 1
+capability: validation/gte
+target:
+  layer: state
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-sensor
+  params:
+    pipeline: "silver-events"
+    sensor_key: "event-counter"
+    sensor_count: "5"
+setup:
+  pipeline: silver-events
+  pipeline_config:
+    pipeline: { id: silver-events }
+    validation:
+      trigger: "ALL"
+      rules:
+        - key: "SENSOR#event-counter"
+          check: gte
+          field: sensor_count
+          value: "10"
+    job: { type: command, config: { command: "echo test" } }
+    schedule: { evaluation: { window: "1h", interval: "5m" } }
+  sensors:
+    event-counter:
+      status: COMPLETE
+      sensor_count: 10
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "VALIDATION_EXHAUSTED"
+      condition: exists

@@ -1,0 +1,43 @@
+name: validation-lt-at-boundary
+description: Phantom sensor writes sensor_count 10 when rule expects lt 10 — boundary test where 10 is NOT less than 10
+category: state-consistency
+severity: moderate
+version: 1
+capability: validation/lt
+target:
+  layer: state
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-sensor
+  params:
+    pipeline: "gold-agg"
+    sensor_key: "row-counter"
+    sensor_count: "10"
+setup:
+  pipeline: gold-agg
+  pipeline_config:
+    pipeline: { id: gold-agg }
+    validation:
+      trigger: "ALL"
+      rules:
+        - key: "SENSOR#row-counter"
+          check: lt
+          field: sensor_count
+          value: "10"
+    job: { type: command, config: { command: "echo test" } }
+    schedule: { evaluation: { window: "1h", interval: "5m" } }
+  sensors:
+    row-counter:
+      status: COMPLETE
+      sensor_count: 5
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "VALIDATION_EXHAUSTED"
+      condition: exists

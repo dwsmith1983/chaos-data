@@ -7,100 +7,100 @@ capabilities:
   validation:
     - id: equals
       description: Equals check on sensor field values
-      scenarios: []
+      scenarios: [validation/equals-fail-wrong-value.yaml, validation/equals-pass.yaml]
     - id: gte
       description: Field value >= threshold
-      scenarios: []
+      scenarios: [validation/gte-below-threshold.yaml]
     - id: lte
       description: Field value <= threshold
-      scenarios: []
+      scenarios: [validation/lte-above-threshold.yaml]
     - id: gt
       description: Field value > threshold
-      scenarios: []
+      scenarios: [validation/gt-at-boundary.yaml]
     - id: lt
       description: Field value < threshold
-      scenarios: []
+      scenarios: [validation/lt-at-boundary.yaml]
     - id: exists
       description: Sensor key exists in control table
-      scenarios: []
+      scenarios: [validation/exists-missing-sensor.yaml]
     - id: age_lt
       description: Sensor timestamp freshness check
-      scenarios: []
+      scenarios: [validation/age-lt-stale-sensor.yaml]
     - id: mode_all
       description: ALL validation rules must pass
       scenarios: []
     - id: mode_any
       description: ANY validation rule must pass
-      scenarios: []
+      scenarios: [validation/mode-any-partial-pass.yaml]
 
   trigger_types:
     - id: http
       description: HTTP endpoint trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-http.yaml]
     - id: command
       description: Shell command trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-command.yaml]
     - id: airflow
       description: Apache Airflow DAG trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-airflow.yaml]
     - id: glue
       description: AWS Glue job trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-glue.yaml]
     - id: emr
       description: AWS EMR cluster trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-emr.yaml]
     - id: emr-serverless
       description: AWS EMR Serverless trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-emr-serverless.yaml]
     - id: step-function
       description: AWS Step Functions trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-step-function.yaml]
     - id: databricks
       description: Databricks job trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-databricks.yaml]
     - id: lambda
       description: AWS Lambda invocation trigger
-      scenarios: []
+      scenarios: [trigger/phantom-trigger-lambda.yaml]
 
   post_run:
     - id: post_run_drift
       description: Sensor count diverged after job completed
-      scenarios: []
+      scenarios: [post-run/drift-count-changed.yaml]
     - id: post_run_drift_inflight
       description: Drift detected while job still running
-      scenarios: []
+      scenarios: [post-run/drift-inflight.yaml]
     - id: post_run_passed
       description: Post-run validation rules passed
-      scenarios: []
+      scenarios: [post-run/post-run-rules-passed.yaml]
     - id: post_run_failed
       description: Post-run validation rules failed
-      scenarios: []
+      scenarios: [post-run/post-run-rules-failed.yaml]
     - id: post_run_sensor_missing
       description: Post-run sensor never arrived within timeout
-      scenarios: []
+      scenarios: [post-run/sensor-missing-timeout.yaml]
     - id: post_run_baseline_captured
       description: Baseline snapshot recorded after job trigger
-      scenarios: []
+      scenarios: [post-run/baseline-captured.yaml]
     - id: baseline_capture_failed
       description: Baseline snapshot failed to record
-      scenarios: []
+      scenarios: [post-run/baseline-capture-failed.yaml]
 
   sla:
     - id: sla_warning
       description: Approaching SLA deadline
-      scenarios: []
+      scenarios: [sla/sla-warning.yaml]
     - id: sla_breach
       description: SLA deadline exceeded
-      scenarios: []
+      scenarios: [sla/sla-breach.yaml]
     - id: sla_met
       description: Completed within SLA deadline
-      scenarios: []
+      scenarios: [sla/sla-met.yaml]
     - id: relative_sla_warning
       description: maxDuration warning threshold
-      scenarios: []
+      scenarios: [sla/relative-sla-warning.yaml]
     - id: relative_sla_breach
       description: maxDuration exceeded
-      scenarios: []
+      scenarios: [sla/relative-sla-breach.yaml]
 
   watchdog:
     - id: schedule_missed

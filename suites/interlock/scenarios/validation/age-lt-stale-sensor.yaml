@@ -1,0 +1,43 @@
+name: validation-age-lt-stale-sensor
+description: Timestamp forgery backdates sensor by 6h when rule expects age_lt 2h — should exhaust validation
+category: state-consistency
+severity: moderate
+version: 1
+capability: validation/age_lt
+target:
+  layer: state
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-timestamp-forgery
+  params:
+    pipeline: "bronze-cdr"
+    sensor_key: "hourly-status"
+    offset: "-6h"
+setup:
+  pipeline: bronze-cdr
+  pipeline_config:
+    pipeline: { id: bronze-cdr }
+    validation:
+      trigger: "ALL"
+      rules:
+        - key: "SENSOR#hourly-status"
+          check: age_lt
+          field: updated_at
+          value: "2h"
+    job: { type: command, config: { command: "echo test" } }
+    schedule: { evaluation: { window: "1h", interval: "5m" } }
+  sensors:
+    hourly-status:
+      status: COMPLETE
+      sensor_count: 1000
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "VALIDATION_EXHAUSTED"
+      condition: exists

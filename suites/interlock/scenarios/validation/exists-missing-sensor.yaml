@@ -1,0 +1,39 @@
+name: validation-exists-missing-sensor
+description: No sensor written when rule expects exists check — should exhaust validation
+category: state-consistency
+severity: moderate
+version: 1
+capability: validation/exists
+target:
+  layer: state
+  filter: { prefix: "", match: "" }
+mutation:
+  type: interlock-phantom-sensor
+  params:
+    pipeline: "bronze-cdr"
+    sensor_key: "ghost-sensor"
+    status: "MISSING"
+setup:
+  pipeline: bronze-cdr
+  pipeline_config:
+    pipeline: { id: bronze-cdr }
+    validation:
+      trigger: "ALL"
+      rules:
+        - key: "SENSOR#hourly-status"
+          check: exists
+          field: status
+          value: ""
+    job: { type: command, config: { command: "echo test" } }
+    schedule: { evaluation: { window: "1h", interval: "5m" } }
+probability: 1.0
+safety:
+  max_affected_pct: 100
+  cooldown: 0s
+  sla_aware: false
+expected_response:
+  within: 30s
+  asserts:
+    - type: interlock_event
+      target: "VALIDATION_EXHAUSTED"
+      condition: exists
