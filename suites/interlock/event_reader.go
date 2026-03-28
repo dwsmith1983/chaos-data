@@ -18,6 +18,7 @@ type InterlockEventRecord struct {
 // InterlockEventReader reads Interlock-emitted events.
 type InterlockEventReader interface {
 	ReadEvents(ctx context.Context, pipeline string, eventType string) ([]InterlockEventRecord, error)
+	Reset()
 }
 
 // ---------------------------------------------------------------------------
@@ -92,3 +93,6 @@ func NewAWSEventReader() *AWSEventReader {
 func (r *AWSEventReader) ReadEvents(_ context.Context, _ string, _ string) ([]InterlockEventRecord, error) {
 	return nil, fmt.Errorf("AWS event reader not yet implemented")
 }
+
+// Reset is a no-op for AWSEventReader — events are managed externally.
+func (r *AWSEventReader) Reset() {}

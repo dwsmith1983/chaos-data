@@ -60,12 +60,13 @@ func (h *Harness) Setup(ctx context.Context, spec SetupSpec) error {
 
 	// Write sensors if provided.
 	for sensorKey, sensorData := range spec.Sensors {
-		status, _ := sensorData["status"].(string)
+		// status field is optional — use empty string if missing or not a string.
+		statusVal, _ := sensorData["status"].(string)
 		metadata := toStringMap(sensorData)
 		sd := adapter.SensorData{
 			Pipeline:    nsPipeline,
 			Key:         sensorKey,
-			Status:      types.SensorStatus(status),
+			Status:      types.SensorStatus(statusVal),
 			LastUpdated: h.clock.Now(),
 			Metadata:    metadata,
 		}

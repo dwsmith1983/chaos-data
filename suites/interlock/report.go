@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 	"time"
 )
@@ -19,12 +20,9 @@ func FormatTable(matrix CoverageMatrix, w io.Writer) error {
 
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 
-	if _, err := fmt.Fprintln(tw, "Category\tCapability\tScenarios\tPass\tFail\tDuration\tStatus"); err != nil {
-		return fmt.Errorf("failed to write column headers: %w", err)
-	}
-	if _, err := fmt.Fprintln(tw, "────────\t──────────\t─────────\t────\t────\t────────\t──────"); err != nil {
-		return fmt.Errorf("failed to write separator: %w", err)
-	}
+	// tabwriter buffers all writes until Flush — only the Flush error matters.
+	fmt.Fprintln(tw, "Category\tCapability\tScenarios\tPass\tFail\tDuration\tStatus")
+	fmt.Fprintln(tw, "────────\t──────────\t─────────\t────\t────\t────────\t──────")
 
 	for _, r := range matrix.Results {
 		scenarios := r.Passed + r.Failed
@@ -39,11 +37,9 @@ func FormatTable(matrix CoverageMatrix, w io.Writer) error {
 			dur = "-"
 		}
 
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
 			r.Category, r.Capability.ID, scenarios, pass, fail, dur, status,
-		); err != nil {
-			return fmt.Errorf("failed to write row: %w", err)
-		}
+		)
 	}
 
 	if err := tw.Flush(); err != nil {
@@ -101,7 +97,7 @@ func FormatMarkdown(matrix CoverageMatrix, w io.Writer) error {
 		}
 
 		if _, err := fmt.Fprintf(w, "| %s | %s | %d | %s | %s | %s | %s |\n",
-			r.Category, r.Capability.ID, scenarios, pass, fail, dur, status,
+			escapeMD(r.Category), escapeMD(r.Capability.ID), scenarios, pass, fail, dur, status,
 		); err != nil {
 			return fmt.Errorf("failed to write markdown row: %w", err)
 		}
@@ -122,6 +118,11 @@ func FormatMarkdown(matrix CoverageMatrix, w io.Writer) error {
 // formatDuration renders a duration as seconds with one decimal place.
 func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%.1fs", d.Seconds())
+}
+
+// escapeMD escapes pipe characters that would break Markdown table formatting.
+func escapeMD(s string) string {
+	return strings.ReplaceAll(s, "|", "\\|")
 }
 
 // formatStatus returns a display string for a capability status.

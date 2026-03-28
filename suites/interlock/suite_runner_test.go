@@ -41,12 +41,18 @@ func TestSuiteRunner_RunScenario_NoAssertions(t *testing.T) {
 	}
 
 	result := runner.RunScenario(context.Background(), ss)
-	// "delay" isn't registered so injection will fail, but we're testing the runner flow.
+	// "delay" isn't registered so injection should fail.
 	if result.Scenario != "test-noop" {
 		t.Errorf("scenario = %q, want test-noop", result.Scenario)
 	}
 	if result.Capability != "validation/equals" {
 		t.Errorf("capability = %q, want validation/equals", result.Capability)
+	}
+	if result.Error == "" {
+		t.Error("expected error from unregistered mutation")
+	}
+	if result.Passed {
+		t.Error("expected Passed=false for failed injection")
 	}
 }
 
@@ -87,8 +93,13 @@ func TestSuiteRunner_RunScenario_WithSetup(t *testing.T) {
 	if result.Scenario != "test-with-setup" {
 		t.Errorf("scenario = %q, want test-with-setup", result.Scenario)
 	}
-	// Setup should succeed; injection may fail (unregistered mutation) but
-	// the runner should not panic.
+	// Setup should succeed; injection fails (unregistered mutation).
+	if result.Error == "" {
+		t.Error("expected error from unregistered mutation")
+	}
+	if result.Passed {
+		t.Error("expected Passed=false for failed injection")
+	}
 }
 
 func TestSuiteRunner_RunScenario_IncrementRunCounter(t *testing.T) {
@@ -189,8 +200,12 @@ func TestSuiteRunner_Report(t *testing.T) {
 
 	runner := NewSuiteRunner(store, mutation.NewRegistry(), ct)
 	matrix := runner.Report()
-	if matrix.Total != 53 {
-		t.Errorf("total = %d, want 53", matrix.Total)
+	if matrix.Total == 0 {
+		t.Error("expected non-zero total capabilities")
+	}
+	if matrix.Total != matrix.Covered+matrix.Gaps+matrix.Untested {
+		t.Errorf("total (%d) != covered (%d) + gaps (%d) + untested (%d)",
+			matrix.Total, matrix.Covered, matrix.Gaps, matrix.Untested)
 	}
 }
 

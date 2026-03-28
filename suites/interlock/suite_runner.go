@@ -3,6 +3,7 @@ package interlocksuite
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
@@ -23,11 +24,12 @@ type ScenarioResult struct {
 
 // SuiteRunner orchestrates chaos scenario execution.
 type SuiteRunner struct {
+	mu          sync.Mutex
 	clock       adapter.Clock
 	store       adapter.StateStore
 	registry    *mutation.Registry
 	evaluator   InterlockEvaluator
-	eventReader *LocalEventReader
+	eventReader InterlockEventReader
 	coverage    *CoverageTracker
 	runCounter  int
 }
@@ -46,7 +48,7 @@ func WithSuiteEvaluator(e InterlockEvaluator) SuiteOption {
 }
 
 // WithSuiteEventReader sets the event reader used by the suite runner.
-func WithSuiteEventReader(er *LocalEventReader) SuiteOption {
+func WithSuiteEventReader(er InterlockEventReader) SuiteOption {
 	return func(r *SuiteRunner) { r.eventReader = er }
 }
 
@@ -71,8 +73,11 @@ func NewSuiteRunner(store adapter.StateStore, reg *mutation.Registry, coverage *
 // tears down.
 func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) ScenarioResult {
 	start := r.clock.Now()
+
+	r.mu.Lock()
 	r.runCounter++
 	runID := fmt.Sprintf("%03d", r.runCounter)
+	r.mu.Unlock()
 
 	result := ScenarioResult{
 		Scenario:   ss.Name,
@@ -125,8 +130,14 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 
 	// 7. Trigger Interlock evaluation.
 	if ss.Setup != nil {
-		_ = r.evaluator.EvaluateAfterInjection(ctx,
-			h.NamespacedPipeline(ss.Setup.Pipeline), "default", "default")
+		if err := r.evaluator.EvaluateAfterInjection(ctx,
+			h.NamespacedPipeline(ss.Setup.Pipeline), "default", "default"); err != nil {
+			result.Error = fmt.Sprintf("evaluation failed: %v", err)
+			result.Passed = false
+			_ = h.Teardown(ctx)
+			r.coverage.Record(ss.Capability, false, r.clock.Now().Sub(start))
+			return result
+		}
 	}
 
 	// 8. Evaluate assertions.
