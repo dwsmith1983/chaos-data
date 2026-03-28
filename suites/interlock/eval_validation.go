@@ -30,7 +30,10 @@ func (m *ValidationModule) Evaluate(ctx context.Context, p EvalParams) error {
 	// Terminal trigger check: if trigger is already completed/failed,
 	// exit silently to let PostRun/Recovery modules handle it.
 	triggerKey := adapter.TriggerKey{Pipeline: p.Pipeline, Schedule: "default", Date: "default"}
-	triggerStatus, _ := p.Store.ReadTriggerStatus(ctx, triggerKey)
+	triggerStatus, err := p.Store.ReadTriggerStatus(ctx, triggerKey)
+	if err != nil {
+		return fmt.Errorf("validation module: read trigger status: %w", err)
+	}
 	if isTerminalStatus(triggerStatus) {
 		return nil
 	}

@@ -21,12 +21,18 @@ type EvalModule interface {
 	Evaluate(ctx context.Context, params EvalParams) error
 }
 
+// EventWriter combines event emission and reading within a single evaluation pass.
+type EventWriter interface {
+	Emit(event InterlockEventRecord)
+	ReadEvents(ctx context.Context, pipeline string, eventType string) ([]InterlockEventRecord, error)
+}
+
 // EvalParams bundles the shared dependencies passed to each EvalModule.
 type EvalParams struct {
 	Pipeline    string
 	Config      map[string]any
 	Store       adapter.StateStore
-	EventWriter *LocalEventReader
+	EventWriter EventWriter
 	Clock       adapter.Clock
 	Schedule    string
 	Date        string

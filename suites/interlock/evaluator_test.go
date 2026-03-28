@@ -41,6 +41,15 @@ func TestLocalInterlockEvaluator_NoPipelineConfig(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 VALIDATION_EXHAUSTED event, got %d", len(events))
 	}
+
+	// Verify full chain produces exactly 1 event (no double-emission from PostRun/Recovery).
+	allEvents, err := reader.ReadEvents(context.Background(), "pipe-a", "")
+	if err != nil {
+		t.Fatalf("ReadEvents (all): %v", err)
+	}
+	if len(allEvents) != 1 {
+		t.Fatalf("expected exactly 1 event from full chain, got %d: %+v", len(allEvents), allEvents)
+	}
 }
 
 func TestLocalInterlockEvaluator_RulesPass(t *testing.T) {
@@ -88,6 +97,15 @@ validation:
 	}
 	if len(events) != 1 {
 		t.Fatalf("expected 1 JOB_TRIGGERED event, got %d", len(events))
+	}
+
+	// Verify full chain produces exactly 1 event (no double-emission from PostRun/Recovery).
+	allEvents, err := reader.ReadEvents(ctx, "pipe-b", "")
+	if err != nil {
+		t.Fatalf("ReadEvents (all): %v", err)
+	}
+	if len(allEvents) != 1 {
+		t.Fatalf("expected exactly 1 event from full chain, got %d: %+v", len(allEvents), allEvents)
 	}
 }
 
@@ -185,5 +203,14 @@ validation:
 	}
 	if len(events) != 1 {
 		t.Fatalf("expected 1 VALIDATION_EXHAUSTED event, got %d", len(events))
+	}
+
+	// Verify full chain produces exactly 1 event (no double-emission from PostRun/Recovery).
+	allEvents, err := reader.ReadEvents(ctx, "pipe-c", "")
+	if err != nil {
+		t.Fatalf("ReadEvents (all): %v", err)
+	}
+	if len(allEvents) != 1 {
+		t.Fatalf("expected exactly 1 event from full chain, got %d: %+v", len(allEvents), allEvents)
 	}
 }
