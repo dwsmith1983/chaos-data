@@ -157,6 +157,66 @@ func (a *TriggerStateAsserter) ValidateTarget(assertion types.Assertion) error {
 }
 
 // ---------------------------------------------------------------------------
+// RerunStateAsserter — handles rerun_state assertions
+// ---------------------------------------------------------------------------
+
+// RerunStateAsserter evaluates rerun_state assertions by counting reruns in the
+// state store. Used in suite context where reruns are recorded with
+// schedule="default" and date="default".
+type RerunStateAsserter struct {
+	mu       sync.Mutex
+	store    adapter.StateStore
+	pipeline string
+}
+
+// NewRerunStateAsserter creates a RerunStateAsserter backed by the given store.
+func NewRerunStateAsserter(store adapter.StateStore) *RerunStateAsserter {
+	return &RerunStateAsserter{store: store}
+}
+
+// SetPipeline sets the namespaced pipeline ID for the current scenario.
+func (a *RerunStateAsserter) SetPipeline(pipeline string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.pipeline = pipeline
+}
+
+// Supports reports that this asserter handles rerun_state assertions.
+func (a *RerunStateAsserter) Supports(at types.AssertionType) bool {
+	return at == types.AssertRerunState
+}
+
+// Evaluate checks whether reruns exist for the current pipeline using the
+// state store's CountReruns method with schedule="default" and date="default".
+func (a *RerunStateAsserter) Evaluate(ctx context.Context, assertion types.Assertion) (bool, error) {
+	a.mu.Lock()
+	pipeline := a.pipeline
+	a.mu.Unlock()
+
+	count, err := a.store.CountReruns(ctx, pipeline, "default", "default")
+	if err != nil {
+		return false, fmt.Errorf("rerun asserter: count reruns: %w", err)
+	}
+
+	switch assertion.Condition {
+	case types.CondExists:
+		return count > 0, nil
+	case types.CondNotExists:
+		return count == 0, nil
+	default:
+		return false, fmt.Errorf("rerun asserter: unsupported condition %q for rerun_state", assertion.Condition)
+	}
+}
+
+// ValidateTarget checks that the assertion target is non-empty.
+func (a *RerunStateAsserter) ValidateTarget(assertion types.Assertion) error {
+	if assertion.Target == "" {
+		return fmt.Errorf("rerun_state target must not be empty")
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // CompositeAsserter — delegates to multiple child asserters
 // ---------------------------------------------------------------------------
 

@@ -69,20 +69,16 @@ func (e *LocalInterlockEvaluator) EvaluateAfterInjection(ctx context.Context, pi
 	if err != nil {
 		return fmt.Errorf("read pipeline config: %w", err)
 	}
-	if configBytes == nil {
-		// No config — emit VALIDATION_EXHAUSTED (nothing to evaluate).
-		e.eventWriter.Emit(InterlockEventRecord{
-			PipelineID: pipeline,
-			EventType:  "VALIDATION_EXHAUSTED",
-			Timestamp:  e.clock.Now(),
-		})
-		return nil
-	}
-
-	// Parse config to generic map for modules.
+	// Parse config to generic map for modules. When no config exists, use an
+	// empty map so modules can still run — the TriggerModule handles the
+	// "no sensors, no rules" case by emitting VALIDATION_EXHAUSTED.
 	var config map[string]any
-	if err := yaml.Unmarshal(configBytes, &config); err != nil {
-		return fmt.Errorf("parse pipeline config: %w", err)
+	if configBytes == nil {
+		config = map[string]any{}
+	} else {
+		if err := yaml.Unmarshal(configBytes, &config); err != nil {
+			return fmt.Errorf("parse pipeline config: %w", err)
+		}
 	}
 
 	params := EvalParams{

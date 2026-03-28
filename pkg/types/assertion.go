@@ -67,7 +67,7 @@ var validConditions = map[AssertionType]map[Condition]bool{
 		CondStatusRunning: true, CondStatusStopped: true,
 	},
 	AssertTriggerState: {
-		CondStatusFailed: true, CondStatusSuccess: true, CondStatusKilled: true,
+		CondIsStale: true, CondStatusFailed: true, CondStatusSuccess: true, CondStatusKilled: true,
 		CondStatusTimeout: true, CondWasTriggered: true,
 		CondStatusRunning: true, CondStatusStopped: true,
 	},

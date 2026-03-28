@@ -72,7 +72,8 @@ func suiteRunCmd() *cobra.Command {
 
 				suiteAsserter := interlocksuite.NewSuiteAsserter(localReader)
 				triggerAsserter := interlocksuite.NewTriggerStateAsserter(sqlStore)
-				compositeAsserter = interlocksuite.NewCompositeAsserter(suiteAsserter, triggerAsserter)
+				rerunAsserter := interlocksuite.NewRerunStateAsserter(sqlStore)
+				compositeAsserter = interlocksuite.NewCompositeAsserter(suiteAsserter, triggerAsserter, rerunAsserter)
 
 			case "aws":
 				cfg, err := awsconfig.LoadDefaultConfig(ctx)
@@ -91,7 +92,8 @@ func suiteRunCmd() *cobra.Command {
 
 				suiteAsserter := interlocksuite.NewSuiteAsserter(awsReader)
 				triggerAsserter := interlocksuite.NewTriggerStateAsserter(ddbState)
-				compositeAsserter = interlocksuite.NewCompositeAsserter(suiteAsserter, triggerAsserter)
+				rerunAsserter := interlocksuite.NewRerunStateAsserter(ddbState)
+				compositeAsserter = interlocksuite.NewCompositeAsserter(suiteAsserter, triggerAsserter, rerunAsserter)
 
 			default:
 				return fmt.Errorf("unsupported target %q (must be \"local\" or \"aws\")", target)

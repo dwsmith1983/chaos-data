@@ -167,6 +167,160 @@ func TestSuiteAsserter_PipelineIsolation(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// RerunStateAsserter tests
+// ---------------------------------------------------------------------------
+
+func TestRerunStateAsserter_Supports(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	a := NewRerunStateAsserter(store)
+
+	tests := []struct {
+		name     string
+		at       types.AssertionType
+		expected bool
+	}{
+		{"rerun_state", types.AssertRerunState, true},
+		{"interlock_event", types.AssertInterlockEvent, false},
+		{"trigger_state", types.AssertTriggerState, false},
+		{"sensor_state", types.AssertSensorState, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := a.Supports(tt.at); got != tt.expected {
+				t.Errorf("Supports(%q) = %v, want %v", tt.at, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestRerunStateAsserter_ValidateTarget(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	a := NewRerunStateAsserter(store)
+
+	if err := a.ValidateTarget(types.Assertion{
+		Type:   types.AssertRerunState,
+		Target: "bronze-cdr",
+	}); err != nil {
+		t.Fatalf("expected nil error for valid target, got: %v", err)
+	}
+
+	if err := a.ValidateTarget(types.Assertion{
+		Type:   types.AssertRerunState,
+		Target: "",
+	}); err == nil {
+		t.Fatal("expected error for empty target")
+	}
+}
+
+func TestRerunStateAsserter_Evaluate_Exists(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	a := NewRerunStateAsserter(store)
+	a.SetPipeline("suite-001-bronze-cdr")
+
+	ctx := context.Background()
+
+	// No reruns yet — exists should return false.
+	ok, err := a.Evaluate(ctx, types.Assertion{
+		Type:      types.AssertRerunState,
+		Target:    "bronze-cdr",
+		Condition: types.CondExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected false when no reruns recorded")
+	}
+
+	// Write a rerun.
+	if err := store.WriteRerun(ctx, "suite-001-bronze-cdr", "default", "default", "flaky"); err != nil {
+		t.Fatalf("WriteRerun: %v", err)
+	}
+
+	ok, err = a.Evaluate(ctx, types.Assertion{
+		Type:      types.AssertRerunState,
+		Target:    "bronze-cdr",
+		Condition: types.CondExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected true after rerun recorded")
+	}
+}
+
+func TestRerunStateAsserter_Evaluate_NotExists(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	a := NewRerunStateAsserter(store)
+	a.SetPipeline("suite-001-bronze-cdr")
+
+	ctx := context.Background()
+
+	// No reruns — not_exists should return true.
+	ok, err := a.Evaluate(ctx, types.Assertion{
+		Type:      types.AssertRerunState,
+		Target:    "bronze-cdr",
+		Condition: types.CondNotExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected true when no reruns recorded (not_exists)")
+	}
+
+	// Write a rerun — not_exists should return false.
+	if err := store.WriteRerun(ctx, "suite-001-bronze-cdr", "default", "default", "timeout"); err != nil {
+		t.Fatalf("WriteRerun: %v", err)
+	}
+
+	ok, err = a.Evaluate(ctx, types.Assertion{
+		Type:      types.AssertRerunState,
+		Target:    "bronze-cdr",
+		Condition: types.CondNotExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected false after rerun recorded (not_exists)")
+	}
+}
+
+func TestRerunStateAsserter_PipelineIsolation(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	a := NewRerunStateAsserter(store)
+
+	ctx := context.Background()
+
+	// Write rerun for pipeline A.
+	if err := store.WriteRerun(ctx, "suite-001-pipeline-a", "default", "default", "flaky"); err != nil {
+		t.Fatalf("WriteRerun: %v", err)
+	}
+
+	// Set asserter to pipeline B — should NOT see pipeline A's reruns.
+	a.SetPipeline("suite-002-pipeline-b")
+
+	ok, err := a.Evaluate(ctx, types.Assertion{
+		Type:      types.AssertRerunState,
+		Target:    "pipeline-b",
+		Condition: types.CondExists,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("expected false — pipeline isolation should prevent cross-pollination")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // TriggerStateAsserter tests
 // ---------------------------------------------------------------------------
 

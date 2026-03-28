@@ -213,6 +213,61 @@ func TestHarness_Teardown_CleansNamespacedState(t *testing.T) {
 	}
 }
 
+func TestHarness_Setup_BaselineSensorCount(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	h := NewHarness(store, clk, "007")
+
+	spec := SetupSpec{
+		Pipeline: "bronze-cdr",
+		Sensors: map[string]map[string]interface{}{
+			"hourly-status": {"status": "COMPLETE", "sensor_count": 1000},
+		},
+	}
+
+	if err := h.Setup(context.Background(), spec); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	sensor, err := store.ReadSensor(context.Background(), "suite-007-bronze-cdr", "hourly-status")
+	if err != nil {
+		t.Fatalf("ReadSensor: %v", err)
+	}
+	if got := sensor.Metadata["__baseline_sensor_count"]; got != "1000" {
+		t.Errorf("metadata[__baseline_sensor_count] = %q, want %q", got, "1000")
+	}
+	if got := sensor.Metadata["sensor_count"]; got != "1000" {
+		t.Errorf("metadata[sensor_count] = %q, want %q", got, "1000")
+	}
+}
+
+func TestHarness_Setup_NoBaselineWithoutSensorCount(t *testing.T) {
+	t.Parallel()
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	h := NewHarness(store, clk, "008")
+
+	spec := SetupSpec{
+		Pipeline: "silver-events",
+		Sensors: map[string]map[string]interface{}{
+			"daily-check": {"status": "READY"},
+		},
+	}
+
+	if err := h.Setup(context.Background(), spec); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	sensor, err := store.ReadSensor(context.Background(), "suite-008-silver-events", "daily-check")
+	if err != nil {
+		t.Fatalf("ReadSensor: %v", err)
+	}
+	if _, ok := sensor.Metadata["__baseline_sensor_count"]; ok {
+		t.Error("expected no __baseline_sensor_count when sensor_count is absent")
+	}
+}
+
 func TestHarness_Setup_SensorMetadataStringConversion(t *testing.T) {
 	t.Parallel()
 	store := newTestSQLiteStore(t)

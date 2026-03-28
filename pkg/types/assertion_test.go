@@ -63,6 +63,7 @@ func TestCondition_ValidFor(t *testing.T) {
 		valid bool
 	}{
 		{CondIsStale, AssertSensorState, true},
+		{CondIsStale, AssertTriggerState, true},
 		{CondIsStale, AssertDataState, false},
 		{CondExists, AssertSensorState, true},
 		{CondExists, AssertEventEmitted, true},

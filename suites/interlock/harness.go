@@ -63,6 +63,10 @@ func (h *Harness) Setup(ctx context.Context, spec SetupSpec) error {
 		// status field is optional — use empty string if missing or not a string.
 		statusVal, _ := sensorData["status"].(string)
 		metadata := toStringMap(sensorData)
+		// Preserve baseline sensor_count so PostRunModule can detect drift.
+		if sc, ok := metadata["sensor_count"]; ok {
+			metadata["__baseline_sensor_count"] = sc
+		}
 		sd := adapter.SensorData{
 			Pipeline:    nsPipeline,
 			Key:         sensorKey,
