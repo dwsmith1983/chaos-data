@@ -35,3 +35,41 @@ func (m *mockAirflowAPI) GetTaskInstance(ctx context.Context, dagID, taskID stri
 	}
 	return airflow.TaskInstanceState{}, nil
 }
+
+// mockAirflowVariableAPI is a test double for AirflowVariableAPI that delegates
+// each method to a configurable function field. Methods return zero values when
+// the corresponding field is nil.
+type mockAirflowVariableAPI struct {
+	getVariableFn    func(ctx context.Context, key string) (airflow.Variable, error)
+	setVariableFn    func(ctx context.Context, v airflow.Variable) error
+	deleteVariableFn func(ctx context.Context, key string) error
+	listVariablesFn  func(ctx context.Context) ([]airflow.Variable, error)
+}
+
+func (m *mockAirflowVariableAPI) GetVariable(ctx context.Context, key string) (airflow.Variable, error) {
+	if m.getVariableFn != nil {
+		return m.getVariableFn(ctx, key)
+	}
+	return airflow.Variable{}, nil
+}
+
+func (m *mockAirflowVariableAPI) SetVariable(ctx context.Context, v airflow.Variable) error {
+	if m.setVariableFn != nil {
+		return m.setVariableFn(ctx, v)
+	}
+	return nil
+}
+
+func (m *mockAirflowVariableAPI) DeleteVariable(ctx context.Context, key string) error {
+	if m.deleteVariableFn != nil {
+		return m.deleteVariableFn(ctx, key)
+	}
+	return nil
+}
+
+func (m *mockAirflowVariableAPI) ListVariables(ctx context.Context) ([]airflow.Variable, error) {
+	if m.listVariablesFn != nil {
+		return m.listVariablesFn(ctx)
+	}
+	return nil, nil
+}

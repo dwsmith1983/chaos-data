@@ -65,6 +65,7 @@ type DagsterAdapterConfig struct {
 	Headers                map[string]string `yaml:"headers"`
 	RepositoryLocationName string            `yaml:"repository_location_name"`
 	RepositoryName         string            `yaml:"repository_name"`
+	StateDSN               string            `yaml:"state_dsn"`
 }
 
 // AirflowAdapterConfig maps 1:1 to airflow.Config with YAML tags.
@@ -74,6 +75,8 @@ type AirflowAdapterConfig struct {
 	Version  string            `yaml:"version"`
 	Username string            `yaml:"username"`
 	Password string            `yaml:"password"`
+	State    string            `yaml:"state"`     // "variables" or "sqlite" (default: "sqlite")
+	StateDSN string            `yaml:"state_dsn"` // SQLite DSN when state=sqlite; default ":memory:"
 }
 
 // maxConfigSize is the maximum allowed size for config data (1 MB).
@@ -219,6 +222,44 @@ func (c Config) BuildSafety(ctx context.Context) (adapter.SafetyController, erro
 	default:
 		return nil, fmt.Errorf("config: unknown safety type %q", c.Safety.Type)
 	}
+}
+
+// BuildStateStore constructs a StateStore from the configured adapter.
+// Returns the store, a cleanup function, and any error.
+// The cleanup function must be called when the store is no longer needed.
+func (c Config) BuildStateStore() (adapter.StateStore, func(), error) {
+	if c.Adapters.Airflow.URL != "" && c.Adapters.Airflow.State == "variables" {
+		cfg := airflow.Config{
+			URL:      c.Adapters.Airflow.URL,
+			Headers:  c.Adapters.Airflow.Headers,
+			Version:  c.Adapters.Airflow.Version,
+			Username: c.Adapters.Airflow.Username,
+			Password: c.Adapters.Airflow.Password,
+		}
+		cfg.Defaults()
+		if err := cfg.Validate(); err != nil {
+			return nil, nil, fmt.Errorf("config: airflow state: %w", err)
+		}
+		client := airflow.NewVariableClient(cfg)
+		store := airflow.NewAirflowVariableState(client)
+		return store, func() {}, nil
+	}
+
+	// SQLite fallback for airflow (default), dagster, or no adapter.
+	// Use the DSN from whichever adapter is active (has a URL configured).
+	dsn := ":memory:"
+	switch {
+	case c.Adapters.Airflow.URL != "" && c.Adapters.Airflow.StateDSN != "":
+		dsn = c.Adapters.Airflow.StateDSN
+	case c.Adapters.Dagster.URL != "" && c.Adapters.Dagster.StateDSN != "":
+		dsn = c.Adapters.Dagster.StateDSN
+	}
+
+	store, err := local.NewSQLiteState(dsn)
+	if err != nil {
+		return nil, nil, fmt.Errorf("config: state store: %w", err)
+	}
+	return store, func() { store.Close() }, nil
 }
 
 // BuildEmitter constructs an EventEmitter from the emitter config section.

@@ -118,7 +118,29 @@ func TestConfig_Validate_URLWithHeadersAndBothRepoFields(t *testing.T) {
 	}
 }
 
-func TestConfig_Defaults_IsNoOp(t *testing.T) {
+func TestConfig_Defaults_SetsStateDSN(t *testing.T) {
+	t.Parallel()
+
+	cfg := dagster.Config{}
+	cfg.Defaults()
+
+	if cfg.StateDSN != ":memory:" {
+		t.Errorf("Defaults() StateDSN = %q, want %q", cfg.StateDSN, ":memory:")
+	}
+}
+
+func TestConfig_Defaults_PreservesExplicitStateDSN(t *testing.T) {
+	t.Parallel()
+
+	cfg := dagster.Config{StateDSN: "/var/dagster/chaos-state.db"}
+	cfg.Defaults()
+
+	if cfg.StateDSN != "/var/dagster/chaos-state.db" {
+		t.Errorf("Defaults() StateDSN = %q, want %q", cfg.StateDSN, "/var/dagster/chaos-state.db")
+	}
+}
+
+func TestConfig_Defaults_PreservesExplicitFields(t *testing.T) {
 	t.Parallel()
 
 	// Defaults() must not panic and must not overwrite explicitly set fields.
@@ -139,6 +161,7 @@ func TestConfig_Defaults_IsNoOp(t *testing.T) {
 				},
 				RepositoryLocationName: "loc",
 				RepositoryName:         "repo",
+				StateDSN:               "/tmp/state.db",
 			},
 		},
 	}
@@ -163,6 +186,10 @@ func TestConfig_Defaults_IsNoOp(t *testing.T) {
 			if tt.cfg.RepositoryName != before.RepositoryName {
 				t.Errorf("Defaults() changed RepositoryName: got %q, want %q",
 					tt.cfg.RepositoryName, before.RepositoryName)
+			}
+			if tt.cfg.StateDSN != before.StateDSN && before.StateDSN != "" {
+				t.Errorf("Defaults() changed StateDSN: got %q, want %q",
+					tt.cfg.StateDSN, before.StateDSN)
 			}
 		})
 	}
@@ -255,6 +282,20 @@ func TestConfig_Redacted_NilHeaders(t *testing.T) {
 
 	if redacted.Headers != nil {
 		t.Errorf("Redacted().Headers = %v, want nil when original is nil", redacted.Headers)
+	}
+}
+
+func TestConfig_Redacted_IncludesStateDSN(t *testing.T) {
+	t.Parallel()
+
+	cfg := dagster.Config{
+		URL:      "https://dagster.example.com/graphql",
+		StateDSN: "/var/dagster/chaos-state.db",
+	}
+	redacted := cfg.Redacted()
+
+	if redacted.StateDSN != cfg.StateDSN {
+		t.Errorf("Redacted().StateDSN = %q, want %q", redacted.StateDSN, cfg.StateDSN)
 	}
 }
 

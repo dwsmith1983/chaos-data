@@ -33,11 +33,19 @@ type Config struct {
 	// location. Must be set together with RepositoryLocationName.
 	// Optional — when empty, queries omit the field.
 	RepositoryName string
+
+	// StateDSN is the SQLite DSN for chaos-data state persistence.
+	// Defaults to ":memory:" for ephemeral in-memory state.
+	// Set to a file path (e.g., "/var/dagster/chaos-state.db") for persistence.
+	StateDSN string
 }
 
 // Defaults sets default values for optional fields.
-// Config has no optional fields with non-zero defaults, so this is a no-op.
-func (c *Config) Defaults() {}
+func (c *Config) Defaults() {
+	if c.StateDSN == "" {
+		c.StateDSN = ":memory:"
+	}
+}
 
 // Validate checks that required fields are present and consistent.
 // It returns an error if URL is empty or if RepositoryName is set without
@@ -68,6 +76,7 @@ func (c Config) Redacted() Config {
 		URL:                    c.URL,
 		RepositoryLocationName: c.RepositoryLocationName,
 		RepositoryName:         c.RepositoryName,
+		StateDSN:               c.StateDSN,
 	}
 	if c.Headers != nil {
 		out.Headers = make(map[string]string, len(c.Headers))

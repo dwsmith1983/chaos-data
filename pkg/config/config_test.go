@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dwsmith1983/chaos-data/adapters/airflow"
+	"github.com/dwsmith1983/chaos-data/adapters/local"
 	"github.com/dwsmith1983/chaos-data/pkg/config"
 )
 
@@ -594,3 +596,129 @@ func TestLoad_ExactlyMaxSize_OK(t *testing.T) {
 		t.Fatalf("file at exactly 1MB should not be rejected for size: %v", err)
 	}
 }
+
+func TestBuildStateStore_Default_ReturnsSQLiteState(t *testing.T) {
+	t.Parallel()
+	yaml := "adapters: {}\n"
+	path := writeTempFile(t, yaml)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	store, cleanup, err := cfg.BuildStateStore()
+	if err != nil {
+		t.Fatalf("BuildStateStore() error = %v", err)
+	}
+	defer cleanup()
+
+	if store == nil {
+		t.Fatal("expected non-nil store")
+	}
+	if _, ok := store.(*local.SQLiteState); !ok {
+		t.Fatalf("expected *local.SQLiteState, got %T", store)
+	}
+}
+
+func TestBuildStateStore_AirflowVariables_ReturnsAirflowVariableState(t *testing.T) {
+	t.Parallel()
+	yaml := `
+adapters:
+  airflow:
+    url: "http://localhost:8080/api/v1"
+    state: "variables"
+`
+	path := writeTempFile(t, yaml)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	store, cleanup, err := cfg.BuildStateStore()
+	if err != nil {
+		t.Fatalf("BuildStateStore() error = %v", err)
+	}
+	defer cleanup()
+
+	if store == nil {
+		t.Fatal("expected non-nil store")
+	}
+	if _, ok := store.(*airflow.AirflowVariableState); !ok {
+		t.Fatalf("expected *airflow.AirflowVariableState, got %T", store)
+	}
+}
+
+func TestBuildStateStore_AirflowDefaultState_ReturnsSQLiteState(t *testing.T) {
+	t.Parallel()
+	yaml := `
+adapters:
+  airflow:
+    url: "http://localhost:8080/api/v1"
+`
+	path := writeTempFile(t, yaml)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	store, cleanup, err := cfg.BuildStateStore()
+	if err != nil {
+		t.Fatalf("BuildStateStore() error = %v", err)
+	}
+	defer cleanup()
+
+	if store == nil {
+		t.Fatal("expected non-nil store")
+	}
+	if _, ok := store.(*local.SQLiteState); !ok {
+		t.Fatalf("expected *local.SQLiteState, got %T", store)
+	}
+}
+
+func TestBuildStateStore_DagsterStateDSN_ReturnsSQLiteState(t *testing.T) {
+	t.Parallel()
+	dsn := filepath.Join(t.TempDir(), "dagster-state.db")
+	yaml := `
+adapters:
+  dagster:
+    url: "http://localhost:3000/graphql"
+    state_dsn: "` + dsn + `"
+`
+	path := writeTempFile(t, yaml)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	store, cleanup, err := cfg.BuildStateStore()
+	if err != nil {
+		t.Fatalf("BuildStateStore() error = %v", err)
+	}
+	defer cleanup()
+
+	if store == nil {
+		t.Fatal("expected non-nil store")
+	}
+	if _, ok := store.(*local.SQLiteState); !ok {
+		t.Fatalf("expected *local.SQLiteState, got %T", store)
+	}
+}
+
+func TestBuildStateStore_AirflowVariables_InvalidURL_Error(t *testing.T) {
+	t.Parallel()
+	yaml := `
+adapters:
+  airflow:
+    url: "ftp://invalid"
+    state: "variables"
+`
+	path := writeTempFile(t, yaml)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	_, _, err = cfg.BuildStateStore()
+	if err == nil {
+		t.Fatal("expected error for invalid airflow URL with state=variables")
+	}
+	if !strings.Contains(err.Error(), "airflow state") {
+		t.Errorf("error = %q, want message containing %q", err.Error(), "airflow state")
+	}
+}
+

@@ -14,6 +14,7 @@ import (
 	interlockadapter "github.com/dwsmith1983/chaos-data/adapters/interlock"
 	"github.com/dwsmith1983/chaos-data/adapters/local"
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
+	"github.com/dwsmith1983/chaos-data/pkg/config"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
 	interlocksuite "github.com/dwsmith1983/chaos-data/suites/interlock"
 )
@@ -32,7 +33,7 @@ func suiteCmd() *cobra.Command {
 
 // suiteRunCmd returns the "suite run" subcommand.
 func suiteRunCmd() *cobra.Command {
-	var dir, format, target, stateTable, eventsTable string
+	var dir, format, target, stateTable, eventsTable, configFile string
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run a chaos testing suite",
@@ -95,8 +96,38 @@ func suiteRunCmd() *cobra.Command {
 				rerunAsserter := interlocksuite.NewRerunStateAsserter(ddbState)
 				compositeAsserter = interlocksuite.NewCompositeAsserter(suiteAsserter, triggerAsserter, rerunAsserter)
 
+			case "airflow", "dagster":
+				// Requires config file.
+				configPath := resolveConfigPath(configFile)
+				if configPath == "" {
+					return fmt.Errorf("--config is required for target %q", target)
+				}
+				fileCfg, err := config.Load(configPath)
+				if err != nil {
+					return err
+				}
+				if valErr := fileCfg.Validate(); valErr != nil {
+					return valErr
+				}
+
+				cfgStore, storeCleanup, err := fileCfg.BuildStateStore()
+				if err != nil {
+					return fmt.Errorf("build state store: %w", err)
+				}
+				cleanup = storeCleanup
+				store = cfgStore
+
+				localReader := interlocksuite.NewLocalEventReader()
+				eventReader = localReader
+				evaluator = interlocksuite.NewLocalInterlockEvaluator(store, localReader, clk)
+
+				suiteAsserter := interlocksuite.NewSuiteAsserter(localReader)
+				triggerAsserter := interlocksuite.NewTriggerStateAsserter(store)
+				rerunAsserter := interlocksuite.NewRerunStateAsserter(store)
+				compositeAsserter = interlocksuite.NewCompositeAsserter(suiteAsserter, triggerAsserter, rerunAsserter)
+
 			default:
-				return fmt.Errorf("unsupported target %q (must be \"local\" or \"aws\")", target)
+				return fmt.Errorf("unsupported target %q (must be \"local\", \"aws\", \"airflow\", or \"dagster\")", target)
 			}
 			defer cleanup()
 
@@ -146,7 +177,8 @@ func suiteRunCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", "suites/interlock", "Suite directory")
 	cmd.Flags().StringVar(&format, "format", "table", "Output format: table, json, md")
-	cmd.Flags().StringVar(&target, "target", "local", "Execution target: local, aws")
+	cmd.Flags().StringVar(&target, "target", "local", "Execution target: local, aws, airflow, dagster")
+	cmd.Flags().StringVar(&configFile, "config", "", "Path to chaos-data config file (required for airflow/dagster targets)")
 	cmd.Flags().StringVar(&stateTable, "state-table", "chaos-data-state", "DynamoDB state table name (aws target)")
 	cmd.Flags().StringVar(&eventsTable, "events-table", "interlock-events", "DynamoDB events table name (aws target)")
 	return cmd

@@ -155,12 +155,25 @@ func injectCmd() *cobra.Command {
 				emitter = local.NewStdoutEmitter(cmd.OutOrStdout())
 			}
 
-			// State store (independent of config transport).
-			stateStore, err := local.NewSQLiteState(stateDB)
-			if err != nil {
-				return fmt.Errorf("open state store %q: %w", stateDB, err)
+			// State store: config > --state-db flag.
+			var (
+				stateStore  adapter.StateStore
+				stateCleanup func()
+			)
+			if configPath != "" {
+				stateStore, stateCleanup, err = fileCfg.BuildStateStore()
+				if err != nil {
+					return err
+				}
+			} else {
+				sqlStore, sqlErr := local.NewSQLiteState(stateDB)
+				if sqlErr != nil {
+					return fmt.Errorf("open state store %q: %w", stateDB, sqlErr)
+				}
+				stateStore = sqlStore
+				stateCleanup = func() { sqlStore.Close() }
 			}
-			defer stateStore.Close()
+			defer stateCleanup()
 
 			registry := fullStatefulRegistry(stateStore)
 
