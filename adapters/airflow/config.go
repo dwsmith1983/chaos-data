@@ -9,7 +9,8 @@ import (
 )
 
 // warnWriter is the destination for non-fatal warnings emitted by Validate.
-// It defaults to os.Stderr and can be overridden in tests.
+// It defaults to os.Stderr and can be overridden in tests via SetWarnWriter.
+// Not safe for concurrent use — tests that swap this must not use t.Parallel().
 var warnWriter io.Writer = os.Stderr
 
 // Config holds the settings for the Airflow adapter.

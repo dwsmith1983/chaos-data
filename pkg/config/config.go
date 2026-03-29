@@ -97,10 +97,11 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("config: read %s: %w", path, err)
 	}
-	if len(data) > maxConfigSize {
-		return Config{}, fmt.Errorf("config: file %s size %d exceeds maximum %d bytes", path, len(data), maxConfigSize)
+	cfg, err := LoadFromBytes(data)
+	if err != nil {
+		return Config{}, fmt.Errorf("config: load %s: %w", path, err)
 	}
-	return LoadFromBytes(data)
+	return cfg, nil
 }
 
 // Validate checks that at most one adapter is configured.
