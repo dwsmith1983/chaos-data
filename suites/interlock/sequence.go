@@ -8,9 +8,12 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
+	"github.com/dwsmith1983/chaos-data/pkg/engine"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 	"gopkg.in/yaml.v3"
 )
+
+const defaultAssertWithin = 30 * time.Second
 
 // Sequence defines a multi-step chaos test scenario.
 type Sequence struct {
@@ -22,11 +25,12 @@ type Sequence struct {
 
 // SequenceStep is a single step in a sequence.
 type SequenceStep struct {
-	Name              string           `yaml:"name,omitempty"`
-	Setup             *SetupSpec       `yaml:"setup,omitempty"`
-	Scenario          string           `yaml:"scenario,omitempty"`
-	Wait              string           `yaml:"wait,omitempty"`
-	ContinueOnFailure bool             `yaml:"continue_on_failure,omitempty"`
+	Name              string            `yaml:"name,omitempty"`
+	Setup             *SetupSpec        `yaml:"setup,omitempty"`
+	Scenario          string            `yaml:"scenario,omitempty"`
+	Wait              string            `yaml:"wait,omitempty"`
+	AssertWithin      string            `yaml:"assert_within,omitempty"`
+	ContinueOnFailure bool              `yaml:"continue_on_failure,omitempty"`
 	Assert            []types.Assertion `yaml:"assert,omitempty"`
 }
 
@@ -181,43 +185,82 @@ func (r *SuiteRunner) runSequenceStep(ctx context.Context, h *Harness, step Sequ
 		}
 	}
 
-	// Assert: evaluate assertions directly.
+	// Assert: evaluate assertions via engine.EvaluateAssertionSet when a
+	// CompositeAsserter is available; fall back to the legacy hardcoded
+	// exists/not_exists logic for backward compatibility with tests that
+	// don't configure an asserter.
 	if len(step.Assert) > 0 {
-		for _, a := range step.Assert {
-			if err := a.Validate(); err != nil {
-				sr.Passed = false
-				sr.Error = fmt.Sprintf("assertion validation: %v", err)
-				sr.Duration = r.clock.Now().Sub(stepStart)
-				return sr
-			}
-			// Read events and check the assertion condition.
-			events, err := r.eventReader.ReadEvents(ctx, "", string(a.Target))
-			if err != nil {
-				sr.Passed = false
-				sr.Error = fmt.Sprintf("read events for assertion: %v", err)
-				sr.Duration = r.clock.Now().Sub(stepStart)
-				return sr
+		if r.asserter != nil {
+			within := defaultAssertWithin
+			if step.AssertWithin != "" {
+				parsed, err := time.ParseDuration(step.AssertWithin)
+				if err != nil {
+					sr.Passed = false
+					sr.Error = fmt.Sprintf("parse assert_within %q: %v", step.AssertWithin, err)
+					sr.Duration = r.clock.Now().Sub(stepStart)
+					return sr
+				}
+				within = parsed
 			}
 
-			switch a.Condition {
-			case types.CondExists:
-				if len(events) == 0 {
+			const pollInterval = 100 * time.Millisecond
+			results := engine.EvaluateAssertionSet(
+				ctx, step.Assert, within, r.asserter, r.clock, nil, pollInterval,
+			)
+			for _, ar := range results {
+				if ar.Error != "" {
 					sr.Passed = false
-					sr.Error = fmt.Sprintf("assertion failed: expected %q event to exist, found none", a.Target)
+					sr.Error = fmt.Sprintf("assertion error: %s", ar.Error)
+					sr.Duration = r.clock.Now().Sub(stepStart)
+					return sr
 				}
-			case types.CondNotExists:
-				if len(events) > 0 {
+				if !ar.Satisfied {
 					sr.Passed = false
-					sr.Error = fmt.Sprintf("assertion failed: expected %q event not to exist, found %d", a.Target, len(events))
+					sr.Error = fmt.Sprintf(
+						"assertion failed: %s %s on %q not satisfied",
+						ar.Assertion.Type, ar.Assertion.Condition, ar.Assertion.Target,
+					)
+					sr.Duration = r.clock.Now().Sub(stepStart)
+					return sr
 				}
-			default:
-				sr.Passed = false
-				sr.Error = fmt.Sprintf("unsupported assertion condition %q for sequence step", a.Condition)
 			}
+		} else {
+			// Legacy fallback: only exists/not_exists via eventReader.
+			for _, a := range step.Assert {
+				if err := a.Validate(); err != nil {
+					sr.Passed = false
+					sr.Error = fmt.Sprintf("assertion validation: %v", err)
+					sr.Duration = r.clock.Now().Sub(stepStart)
+					return sr
+				}
+				events, err := r.eventReader.ReadEvents(ctx, "", string(a.Target))
+				if err != nil {
+					sr.Passed = false
+					sr.Error = fmt.Sprintf("read events for assertion: %v", err)
+					sr.Duration = r.clock.Now().Sub(stepStart)
+					return sr
+				}
 
-			if !sr.Passed {
-				sr.Duration = r.clock.Now().Sub(stepStart)
-				return sr
+				switch a.Condition {
+				case types.CondExists:
+					if len(events) == 0 {
+						sr.Passed = false
+						sr.Error = fmt.Sprintf("assertion failed: expected %q event to exist, found none", a.Target)
+					}
+				case types.CondNotExists:
+					if len(events) > 0 {
+						sr.Passed = false
+						sr.Error = fmt.Sprintf("assertion failed: expected %q event not to exist, found %d", a.Target, len(events))
+					}
+				default:
+					sr.Passed = false
+					sr.Error = fmt.Sprintf("unsupported assertion condition %q for sequence step", a.Condition)
+				}
+
+				if !sr.Passed {
+					sr.Duration = r.clock.Now().Sub(stepStart)
+					return sr
+				}
 			}
 		}
 	}

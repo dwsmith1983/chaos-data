@@ -248,26 +248,12 @@ func (e *Engine) processSingleScenario(ctx context.Context, obj types.DataObject
 // EvaluateAssertions polls all assertions from the given scenarios until all are
 // satisfied or the maximum Within deadline (across all scenarios) elapses.
 //
-// Assertion polarity:
-//   - Positive (exists, is_ready, etc.): poll until found -> Satisfied=true;
-//     timeout -> Satisfied=false (FAIL).
-//   - Negative (not_exists): if found at any point -> Satisfied=false immediately
-//     (FAIL); timeout without finding -> Satisfied=true (PASS).
-//
-// Each assertion is routed:
-//  1. To the external Asserter (if set and Supports returns true)
-//  2. To the built-in DataStateAsserter for data_state assertions
-//  3. Otherwise an unsupported-type error is recorded
+// It collects assertions and the maximum Within duration from the scenarios,
+// then delegates to EvaluateAssertionSet for the actual polling logic.
 //
 // Returns nil when no scenarios have Expected set.
 func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Scenario) []types.AssertionResult {
-	type pendingAssertion struct {
-		assertion types.Assertion
-		idx       int
-		negative  bool
-	}
-	var results []types.AssertionResult
-	var pending []pendingAssertion
+	var allAssertions []types.Assertion
 	var maxWithin time.Duration
 
 	for _, sc := range scenarios {
@@ -277,108 +263,22 @@ func (e *Engine) EvaluateAssertions(ctx context.Context, scenarios []scenario.Sc
 		if sc.Expected.Within.Duration > maxWithin {
 			maxWithin = sc.Expected.Within.Duration
 		}
-		for _, a := range sc.Expected.Asserts {
-			idx := len(results)
-			results = append(results, types.AssertionResult{Assertion: a})
-			pending = append(pending, pendingAssertion{
-				assertion: a,
-				idx:       idx,
-				negative:  isNegativeCondition(a.Condition),
-			})
-		}
+		allAssertions = append(allAssertions, sc.Expected.Asserts...)
 	}
 
-	if len(pending) == 0 {
+	if len(allAssertions) == 0 {
 		return nil
 	}
 
-	// Pre-validate targets if the asserter supports it. A nil asserter
-	// (no WithAsserter option) yields ok=false from the type assertion.
-	if tv, ok := e.asserter.(adapter.TargetValidator); ok {
-		var validated []pendingAssertion
-		for _, p := range pending {
-			if e.asserter.Supports(p.assertion.Type) {
-				if err := tv.ValidateTarget(p.assertion); err != nil {
-					results[p.idx].Error = err.Error()
-					continue
-				}
-			}
-			validated = append(validated, p)
-		}
-		pending = validated
-	}
-
-	if len(pending) == 0 {
-		return results
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, maxWithin)
-	defer cancel()
-
-	pollInterval := e.config.AssertPollInterval.Duration
-	if pollInterval <= 0 {
-		pollInterval = time.Second
-	}
-	ticker := e.clock.NewTicker(pollInterval)
-	defer ticker.Stop()
-
-	dataAsserter := NewDataStateAsserter(e.transport)
-
-	for {
-		select {
-		case <-ctx.Done():
-			// Timeout: negative assertions still pending are satisfied (never found).
-			for _, p := range pending {
-				if p.negative {
-					results[p.idx].Satisfied = true
-					results[p.idx].EvalAt = e.clock.Now()
-				}
-			}
-			return results
-		case <-ticker.C():
-			remaining := pending[:0]
-			for _, p := range pending {
-				ok, err := e.evaluateOne(ctx, p.assertion, dataAsserter)
-				if err != nil {
-					results[p.idx].Error = err.Error()
-					remaining = append(remaining, p)
-					continue
-				}
-				if p.negative {
-					// Negative: if found, fail immediately; if not found, keep polling.
-					if ok {
-						results[p.idx].Satisfied = false
-						results[p.idx].EvalAt = e.clock.Now()
-					} else {
-						remaining = append(remaining, p)
-					}
-				} else {
-					// Positive: if found, pass; if not found, keep polling.
-					if ok {
-						results[p.idx].Satisfied = true
-						results[p.idx].EvalAt = e.clock.Now()
-					} else {
-						remaining = append(remaining, p)
-					}
-				}
-			}
-			pending = remaining
-			if len(pending) == 0 {
-				return results
-			}
-		}
-	}
-}
-
-// evaluateOne routes a single assertion to the appropriate evaluator.
-func (e *Engine) evaluateOne(ctx context.Context, a types.Assertion, dataAsserter *DataStateAsserter) (bool, error) {
-	if e.asserter != nil && e.asserter.Supports(a.Type) {
-		return e.asserter.Evaluate(ctx, a)
-	}
-	if a.Type == types.AssertDataState {
-		return dataAsserter.Evaluate(ctx, a)
-	}
-	return false, fmt.Errorf("no asserter supports assertion type %q", a.Type)
+	return EvaluateAssertionSet(
+		ctx,
+		allAssertions,
+		maxWithin,
+		e.asserter,
+		e.clock,
+		e.transport,
+		e.config.AssertPollInterval.Duration,
+	)
 }
 
 // Run executes a deterministic chaos run against all objects in the staging area.

@@ -473,3 +473,256 @@ func TestSequenceRunner_DurationRecorded(t *testing.T) {
 		t.Errorf("Duration = %v, want >= 0", result.Duration)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Mock asserter for suite-level assertion routing tests
+// ---------------------------------------------------------------------------
+
+// mockSuiteAsserter is a minimal adapter.Asserter for testing sequence assertion
+// routing through the CompositeAsserter path.
+type mockSuiteAsserter struct {
+	supported map[types.AssertionType]bool
+	results   map[string]bool
+}
+
+func (m *mockSuiteAsserter) Supports(at types.AssertionType) bool {
+	return m.supported[at]
+}
+
+func (m *mockSuiteAsserter) Evaluate(_ context.Context, a types.Assertion) (bool, error) {
+	return m.results[a.Target], nil
+}
+
+// ---------------------------------------------------------------------------
+// Assertion routing tests
+// ---------------------------------------------------------------------------
+
+func TestSequenceRunner_AssertionViaSuiteAsserter(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	reg := mutation.NewRegistry()
+	ct, err := NewCoverageTracker("coverage.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mock := &mockSuiteAsserter{
+		supported: map[types.AssertionType]bool{
+			types.AssertSensorState: true,
+		},
+		results: map[string]bool{
+			"my-sensor": true, // always satisfied
+		},
+	}
+	composite := NewCompositeAsserter(mock)
+
+	runner := NewSuiteRunner(store, reg, ct,
+		WithSuiteClock(clk),
+		WithSuiteEvaluator(&AWSInterlockEvaluator{}),
+		WithSuiteAsserter(composite),
+	)
+
+	seq := Sequence{
+		Name: "asserter-routing-test",
+		Steps: []SequenceStep{
+			{
+				Name: "setup-step",
+				Setup: &SetupSpec{
+					Pipeline:      "bronze-cdr",
+					TriggerStatus: "COMPLETED",
+				},
+			},
+			{
+				Name: "assert-via-asserter",
+				Assert: []types.Assertion{
+					{
+						Type:      types.AssertSensorState,
+						Target:    "my-sensor",
+						Condition: types.CondIsReady,
+					},
+				},
+			},
+		},
+	}
+
+	result := runner.RunSequence(context.Background(), seq)
+
+	if !result.Passed {
+		t.Errorf("expected Passed=true; steps: %+v", result.Steps)
+	}
+	if len(result.Steps) != 2 {
+		t.Fatalf("Steps len = %d, want 2", len(result.Steps))
+	}
+	if !result.Steps[0].Passed {
+		t.Errorf("step 0 should pass; error: %s", result.Steps[0].Error)
+	}
+	if !result.Steps[1].Passed {
+		t.Errorf("step 1 (assert) should pass; error: %s", result.Steps[1].Error)
+	}
+}
+
+func TestSequenceRunner_AssertionTimeout(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	reg := mutation.NewRegistry()
+	ct, err := NewCoverageTracker("coverage.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock that never satisfies — target not in results map → returns false.
+	mock := &mockSuiteAsserter{
+		supported: map[types.AssertionType]bool{
+			types.AssertSensorState: true,
+		},
+		results: map[string]bool{},
+	}
+	composite := NewCompositeAsserter(mock)
+
+	runner := NewSuiteRunner(store, reg, ct,
+		WithSuiteClock(clk),
+		WithSuiteEvaluator(&AWSInterlockEvaluator{}),
+		WithSuiteAsserter(composite),
+	)
+
+	seq := Sequence{
+		Name: "assertion-timeout-test",
+		Steps: []SequenceStep{
+			{
+				Name:         "assert-never-satisfied",
+				AssertWithin: "200ms",
+				Assert: []types.Assertion{
+					{
+						Type:      types.AssertSensorState,
+						Target:    "missing-sensor",
+						Condition: types.CondIsReady,
+					},
+				},
+			},
+		},
+	}
+
+	result := runner.RunSequence(context.Background(), seq)
+
+	if result.Passed {
+		t.Error("expected Passed=false when assertion times out")
+	}
+	if len(result.Steps) != 1 {
+		t.Fatalf("Steps len = %d, want 1", len(result.Steps))
+	}
+	if result.Steps[0].Passed {
+		t.Error("step 0 should fail due to assertion timeout")
+	}
+	if result.Steps[0].Error == "" {
+		t.Error("step 0 should have an error message describing the failed assertion")
+	}
+}
+
+func TestSequenceRunner_AssertionDefaultTimeout(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	reg := mutation.NewRegistry()
+	ct, err := NewCoverageTracker("coverage.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock that satisfies immediately.
+	mock := &mockSuiteAsserter{
+		supported: map[types.AssertionType]bool{
+			types.AssertSensorState: true,
+		},
+		results: map[string]bool{
+			"fast-sensor": true,
+		},
+	}
+	composite := NewCompositeAsserter(mock)
+
+	runner := NewSuiteRunner(store, reg, ct,
+		WithSuiteClock(clk),
+		WithSuiteEvaluator(&AWSInterlockEvaluator{}),
+		WithSuiteAsserter(composite),
+	)
+
+	seq := Sequence{
+		Name: "default-timeout-test",
+		Steps: []SequenceStep{
+			{
+				Name: "assert-default-timeout",
+				// No AssertWithin — should use the default 30s timeout.
+				Assert: []types.Assertion{
+					{
+						Type:      types.AssertSensorState,
+						Target:    "fast-sensor",
+						Condition: types.CondIsReady,
+					},
+				},
+			},
+		},
+	}
+
+	result := runner.RunSequence(context.Background(), seq)
+
+	if !result.Passed {
+		t.Errorf("expected Passed=true; steps: %+v", result.Steps)
+	}
+	if len(result.Steps) != 1 {
+		t.Fatalf("Steps len = %d, want 1", len(result.Steps))
+	}
+	if !result.Steps[0].Passed {
+		t.Errorf("step 0 should pass with default timeout; error: %s", result.Steps[0].Error)
+	}
+}
+
+func TestSequenceRunner_AssertionFallbackWithoutAsserter(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	reg := mutation.NewRegistry()
+	ct, err := NewCoverageTracker("coverage.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// No WithSuiteAsserter — r.asserter will be nil,
+	// so assertions should use the legacy exists/not_exists path.
+	runner := NewSuiteRunner(store, reg, ct,
+		WithSuiteClock(clk),
+		WithSuiteEvaluator(&AWSInterlockEvaluator{}),
+	)
+
+	seq := Sequence{
+		Name: "fallback-no-asserter-test",
+		Steps: []SequenceStep{
+			{
+				Name: "assert-not-exists-legacy",
+				Assert: []types.Assertion{
+					{
+						Type:      types.AssertInterlockEvent,
+						Target:    "SOME_EVENT",
+						Condition: types.CondNotExists,
+					},
+				},
+			},
+		},
+	}
+
+	result := runner.RunSequence(context.Background(), seq)
+
+	if !result.Passed {
+		t.Errorf("expected Passed=true (no events exist so not_exists should pass); error: %+v", result.Steps)
+	}
+	if len(result.Steps) != 1 {
+		t.Fatalf("Steps len = %d, want 1", len(result.Steps))
+	}
+	if !result.Steps[0].Passed {
+		t.Errorf("step 0 should pass via legacy fallback; error: %s", result.Steps[0].Error)
+	}
+}
