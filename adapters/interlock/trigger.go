@@ -24,7 +24,7 @@ type InterlockPhantomTrigger struct {
 }
 
 // NewInterlockPhantomTrigger creates a new InterlockPhantomTrigger.
-func NewInterlockPhantomTrigger(store adapter.StateStore, cfg Config) *InterlockPhantomTrigger {
+func NewInterlockPhantomTrigger(store adapter.TriggerStore, cfg Config) *InterlockPhantomTrigger {
 	return &InterlockPhantomTrigger{
 		inner: mutation.NewPhantomTriggerMutation(store),
 		cfg:   cfg,
@@ -36,9 +36,9 @@ func (t *InterlockPhantomTrigger) Type() string { return "interlock-phantom-trig
 
 // Apply enriches params with PipelinePrefix and DefaultSchedule, then
 // delegates to the underlying PhantomTriggerMutation.
-func (t *InterlockPhantomTrigger) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (t *InterlockPhantomTrigger) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichTriggerParams(params, t.cfg)
-	rec, err := t.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := t.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = t.Type()
 	}
@@ -53,7 +53,7 @@ type InterlockJobKill struct {
 }
 
 // NewInterlockJobKill creates a new InterlockJobKill.
-func NewInterlockJobKill(store adapter.StateStore, cfg Config) *InterlockJobKill {
+func NewInterlockJobKill(store adapter.TriggerStore, cfg Config) *InterlockJobKill {
 	return &InterlockJobKill{
 		inner: mutation.NewJobKillMutation(store),
 		cfg:   cfg,
@@ -65,9 +65,9 @@ func (j *InterlockJobKill) Type() string { return "interlock-job-kill" }
 
 // Apply enriches params with PipelinePrefix and DefaultSchedule, then
 // delegates to the underlying JobKillMutation.
-func (j *InterlockJobKill) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (j *InterlockJobKill) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichTriggerParams(params, j.cfg)
-	rec, err := j.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := j.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = j.Type()
 	}
@@ -82,7 +82,7 @@ type InterlockTriggerTimeout struct {
 }
 
 // NewInterlockTriggerTimeout creates a new InterlockTriggerTimeout.
-func NewInterlockTriggerTimeout(store adapter.StateStore, cfg Config) *InterlockTriggerTimeout {
+func NewInterlockTriggerTimeout(store adapter.TriggerStore, cfg Config) *InterlockTriggerTimeout {
 	return &InterlockTriggerTimeout{
 		inner: mutation.NewTriggerTimeoutMutation(store),
 		cfg:   cfg,
@@ -94,9 +94,9 @@ func (tt *InterlockTriggerTimeout) Type() string { return "interlock-trigger-tim
 
 // Apply enriches params with PipelinePrefix and DefaultSchedule, then
 // delegates to the underlying TriggerTimeoutMutation.
-func (tt *InterlockTriggerTimeout) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (tt *InterlockTriggerTimeout) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichTriggerParams(params, tt.cfg)
-	rec, err := tt.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := tt.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = tt.Type()
 	}
@@ -111,7 +111,7 @@ type InterlockFalseSuccess struct {
 }
 
 // NewInterlockFalseSuccess creates a new InterlockFalseSuccess.
-func NewInterlockFalseSuccess(store adapter.StateStore, cfg Config) *InterlockFalseSuccess {
+func NewInterlockFalseSuccess(store adapter.TriggerStore, cfg Config) *InterlockFalseSuccess {
 	return &InterlockFalseSuccess{
 		inner: mutation.NewFalseSuccessMutation(store),
 		cfg:   cfg,
@@ -123,9 +123,9 @@ func (f *InterlockFalseSuccess) Type() string { return "interlock-false-success"
 
 // Apply enriches params with PipelinePrefix and DefaultSchedule, then
 // delegates to the underlying FalseSuccessMutation.
-func (f *InterlockFalseSuccess) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (f *InterlockFalseSuccess) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichTriggerParams(params, f.cfg)
-	rec, err := f.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := f.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = f.Type()
 	}

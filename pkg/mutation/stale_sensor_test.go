@@ -128,7 +128,7 @@ func TestStaleSensorMutation_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newMockStateStore()
 			if tt.sensor.Key != "" {
-				store.sensors[tt.sensor.Pipeline+"/"+tt.sensor.Key] = tt.sensor
+				store.Sensors[tt.sensor.Pipeline+"/"+tt.sensor.Key] = tt.sensor
 			}
 
 			transport := newMockTransport()
@@ -136,7 +136,7 @@ func TestStaleSensorMutation_Apply(t *testing.T) {
 			obj := types.DataObject{Key: "test/data.csv"}
 
 			before := time.Now()
-			record, err := s.Apply(context.Background(), obj, transport, tt.params)
+			record, err := s.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -160,7 +160,7 @@ func TestStaleSensorMutation_Apply(t *testing.T) {
 			// Verify sensor was written with old timestamp.
 			if tt.checkAge != "" {
 				age, _ := time.ParseDuration(tt.checkAge)
-				written, ok := store.sensors[tt.params["pipeline"]+"/"+tt.params["sensor_key"]]
+				written, ok := store.Sensors[tt.params["pipeline"]+"/"+tt.params["sensor_key"]]
 				if !ok {
 					t.Fatal("sensor not written to store")
 				}
@@ -186,7 +186,7 @@ func TestStaleSensorMutation_Apply(t *testing.T) {
 
 func TestStaleSensorMutation_ReadSensorError(t *testing.T) {
 	store := newMockStateStore()
-	store.readSensorErr = true
+	store.ReadSensorErr = true
 
 	transport := newMockTransport()
 	s := mutation.NewStaleSensorMutation(store)
@@ -196,7 +196,7 @@ func TestStaleSensorMutation_ReadSensorError(t *testing.T) {
 		"sensor_key":      "sensor-1",
 		"pipeline":        "etl-daily",
 		"last_update_age": "6h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

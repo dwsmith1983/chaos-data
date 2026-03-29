@@ -36,7 +36,7 @@ func (e *Engine) ReplayFromManifest(ctx context.Context, manifest []byte) ([]typ
 		}
 
 		// Apply the mutation with the original params.
-		record, err := m.Apply(ctx, obj, e.transport, event.Params)
+		record, err := m.Apply(ctx, obj, e.transport, event.Params, e.clock)
 		if err != nil {
 			return records, fmt.Errorf("replay: event %d (%s): apply %q: %w", i, event.ID, event.Mutation, err)
 		}

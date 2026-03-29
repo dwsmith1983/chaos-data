@@ -18,7 +18,7 @@ func RegisterAll(reg *mutation.Registry, store adapter.StateStore, cfg Config) e
 // RegisterSensors registers the five Interlock sensor mutations:
 // InterlockStaleSensor, InterlockPhantomSensor, InterlockSplitSensor,
 // InterlockSensorFlapping, and InterlockTimestampForgery.
-func RegisterSensors(reg *mutation.Registry, store adapter.StateStore, cfg Config) error {
+func RegisterSensors(reg *mutation.Registry, store adapter.SensorStore, cfg Config) error {
 	sensors := []mutation.Mutation{
 		NewInterlockStaleSensor(store, cfg),
 		NewInterlockPhantomSensor(store, cfg),
@@ -37,7 +37,7 @@ func RegisterSensors(reg *mutation.Registry, store adapter.StateStore, cfg Confi
 // RegisterTriggers registers the four Interlock trigger mutations:
 // InterlockPhantomTrigger, InterlockJobKill, InterlockTriggerTimeout,
 // and InterlockFalseSuccess.
-func RegisterTriggers(reg *mutation.Registry, store adapter.StateStore, cfg Config) error {
+func RegisterTriggers(reg *mutation.Registry, store adapter.TriggerStore, cfg Config) error {
 	triggers := []mutation.Mutation{
 		NewInterlockPhantomTrigger(store, cfg),
 		NewInterlockJobKill(store, cfg),

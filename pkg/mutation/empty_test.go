@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -54,10 +55,10 @@ func TestEmptyMutation_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := newMockTransport()
 			obj := types.DataObject{Key: "data/records.csv"}
-			transport.readData[obj.Key] = inputData
+			transport.ReadData[obj.Key] = inputData
 
 			e := &mutation.EmptyMutation{}
-			record, err := e.Apply(context.Background(), obj, transport, tt.params)
+			record, err := e.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -109,7 +110,7 @@ func TestEmptyMutation_PreserveHeaderReadError(t *testing.T) {
 	e := &mutation.EmptyMutation{}
 	record, err := e.Apply(context.Background(), obj, transport, map[string]string{
 		"preserve_header": "true",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -124,7 +125,7 @@ func TestEmptyMutation_NoReadWhenNotPreservingHeader(t *testing.T) {
 	// Note: no readData set. Since preserve_header=false, Read should NOT be called.
 
 	e := &mutation.EmptyMutation{}
-	record, err := e.Apply(context.Background(), obj, transport, map[string]string{})
+	record, err := e.Apply(context.Background(), obj, transport, map[string]string{}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

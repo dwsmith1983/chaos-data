@@ -26,7 +26,7 @@ func TestInterlockStaleSensor_Apply_EnrichesPipelinePrefix(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["prod/my-pipeline/sensor-1"] = adapter.SensorData{
+	store.Sensors["prod/my-pipeline/sensor-1"] = adapter.SensorData{
 		Pipeline:    "prod/my-pipeline",
 		Key:         "sensor-1",
 		Status:      types.SensorStatusReady,
@@ -45,7 +45,7 @@ func TestInterlockStaleSensor_Apply_EnrichesPipelinePrefix(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -67,7 +67,7 @@ func TestInterlockStaleSensor_Apply_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.readSensorErr = true
+	store.ReadSensorErr = true
 
 	cfg := interlock.Config{PipelinePrefix: "prod/"}
 	m := interlock.NewInterlockStaleSensor(store, cfg)
@@ -81,7 +81,7 @@ func TestInterlockStaleSensor_Apply_ErrorPropagation(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("Apply() error = nil, want error")
 	}
@@ -114,7 +114,7 @@ func TestInterlockPhantomSensor_Apply_EnrichesPipelinePrefix(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -136,7 +136,7 @@ func TestInterlockPhantomSensor_Apply_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.writeSensorErr = true
+	store.WriteSensorErr = true
 
 	cfg := interlock.Config{PipelinePrefix: "staging/"}
 	m := interlock.NewInterlockPhantomSensor(store, cfg)
@@ -149,7 +149,7 @@ func TestInterlockPhantomSensor_Apply_ErrorPropagation(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("Apply() error = nil, want error")
 	}
@@ -183,7 +183,7 @@ func TestInterlockSplitSensor_Apply_EnrichesPipelinePrefix(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -205,7 +205,7 @@ func TestInterlockSplitSensor_Apply_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.writeSensorErr = true
+	store.WriteSensorErr = true
 
 	cfg := interlock.Config{PipelinePrefix: "dev/"}
 	m := interlock.NewInterlockSplitSensor(store, cfg)
@@ -219,7 +219,7 @@ func TestInterlockSplitSensor_Apply_ErrorPropagation(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("Apply() error = nil, want error")
 	}
@@ -229,7 +229,7 @@ func TestInterlockStaleSensor_Apply_NoPrefixWhenEmpty(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["my-pipeline/sensor-1"] = adapter.SensorData{
+	store.Sensors["my-pipeline/sensor-1"] = adapter.SensorData{
 		Pipeline:    "my-pipeline",
 		Key:         "sensor-1",
 		Status:      types.SensorStatusReady,
@@ -248,7 +248,7 @@ func TestInterlockStaleSensor_Apply_NoPrefixWhenEmpty(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}

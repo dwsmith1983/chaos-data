@@ -19,7 +19,7 @@ func TestReplayFromManifest_AppliesMutationsInOrder(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),

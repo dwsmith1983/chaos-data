@@ -2,8 +2,15 @@ package dagster
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"net/url"
+	"os"
 )
+
+// warnWriter is the destination for non-fatal warnings emitted by Validate.
+// It defaults to os.Stderr and can be overridden in tests.
+var warnWriter io.Writer = os.Stderr
 
 // Config holds the settings for the Dagster adapter.
 type Config struct {
@@ -42,8 +49,33 @@ func (c *Config) Validate() error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return errors.New("dagster: URL must be a valid http or https URL")
 	}
+	if u.Scheme == "http" {
+		safe := &url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}
+		fmt.Fprintf(warnWriter, "dagster: WARNING: URL %q uses http:// — consider using https:// for production\n", safe.String())
+	}
 	if c.RepositoryName != "" && c.RepositoryLocationName == "" {
 		return errors.New("dagster: RepositoryLocationName is required when RepositoryName is set")
 	}
 	return nil
+}
+
+// Redacted returns a copy of the Config with sensitive fields masked.
+// The Dagster-Cloud-Api-Token header value is replaced with "[REDACTED]"
+// if present. The original Config is not modified.
+func (c Config) Redacted() Config {
+	out := Config{
+		URL:                    c.URL,
+		RepositoryLocationName: c.RepositoryLocationName,
+		RepositoryName:         c.RepositoryName,
+	}
+	if c.Headers != nil {
+		out.Headers = make(map[string]string, len(c.Headers))
+		for k, v := range c.Headers {
+			out.Headers[k] = v
+		}
+		if _, ok := out.Headers["Dagster-Cloud-Api-Token"]; ok {
+			out.Headers["Dagster-Cloud-Api-Token"] = "[REDACTED]"
+		}
+	}
+	return out
 }

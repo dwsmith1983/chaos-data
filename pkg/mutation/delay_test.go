@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -105,7 +106,7 @@ func TestDelayMutation_Apply(t *testing.T) {
 			obj := types.DataObject{Key: "test/data.csv"}
 
 			before := time.Now()
-			record, err := d.Apply(context.Background(), obj, transport, tt.params)
+			record, err := d.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 			after := time.Now()
 
 			if tt.wantErr {
@@ -163,12 +164,12 @@ func TestDelayMutation_Apply(t *testing.T) {
 func TestDelayMutation_HoldError(t *testing.T) {
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "test/data.csv"}
-	transport.holdErr[obj.Key] = fmt.Errorf("storage unavailable")
+	transport.HoldErr[obj.Key] = fmt.Errorf("storage unavailable")
 
 	d := &mutation.DelayMutation{}
 	record, err := d.Apply(context.Background(), obj, transport, map[string]string{
 		"duration": "5s",
-	})
+	}, adapter.NewWallClock())
 
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -189,7 +190,7 @@ func TestDelayMutation_ZeroJitterNoPanic(t *testing.T) {
 	record, err := d.Apply(context.Background(), obj, transport, map[string]string{
 		"duration": "1s",
 		"jitter":   "0s",
-	})
+	}, adapter.NewWallClock())
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

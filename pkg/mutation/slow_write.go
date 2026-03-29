@@ -24,7 +24,7 @@ func (s *SlowWriteMutation) Type() string { return "slow-write" }
 // Params:
 //   - "latency" (required): Go duration string for the base delay.
 //   - "jitter" (optional): Go duration string for random additional delay.
-func (s *SlowWriteMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *SlowWriteMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	latencyStr, ok := params["latency"]
 	if !ok || latencyStr == "" {
 		err := fmt.Errorf("slow-write mutation: missing required param \"latency\"")
@@ -76,6 +76,6 @@ func (s *SlowWriteMutation) Apply(ctx context.Context, obj types.DataObject, tra
 		Mutation:  "slow-write",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

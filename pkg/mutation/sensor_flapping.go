@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -13,11 +12,11 @@ import (
 // SensorFlappingMutation rapidly alternates a sensor between two status values
 // for a given number of iterations, simulating race conditions in stream processing.
 type SensorFlappingMutation struct {
-	store adapter.StateStore
+	store adapter.SensorStore
 }
 
-// NewSensorFlappingMutation creates a SensorFlappingMutation with the given state store.
-func NewSensorFlappingMutation(store adapter.StateStore) *SensorFlappingMutation {
+// NewSensorFlappingMutation creates a SensorFlappingMutation with the given sensor store.
+func NewSensorFlappingMutation(store adapter.SensorStore) *SensorFlappingMutation {
 	return &SensorFlappingMutation{store: store}
 }
 
@@ -31,7 +30,7 @@ func (s *SensorFlappingMutation) Type() string { return "sensor-flapping" }
 //   - "flap_count" (required): number of writes to perform, must be >= 2.
 //   - "start_status" (optional): first status in the alternating sequence (default "ready").
 //   - "alternate_status" (optional): second status in the alternating sequence (default "pending").
-func (s *SensorFlappingMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *SensorFlappingMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	sensorKey, ok := params["sensor_key"]
 	if !ok || sensorKey == "" {
 		err := fmt.Errorf("sensor-flapping mutation: missing required param \"sensor_key\"")
@@ -76,7 +75,7 @@ func (s *SensorFlappingMutation) Apply(ctx context.Context, obj types.DataObject
 			Pipeline:    pipeline,
 			Key:         sensorKey,
 			Status:      status,
-			LastUpdated: time.Now(),
+			LastUpdated: clock.Now(),
 		}
 		if err := s.store.WriteSensor(ctx, pipeline, sensorKey, sensor); err != nil {
 			err = fmt.Errorf("sensor-flapping mutation: write sensor failed on iteration %d with status %q: %w", i, status, err)
@@ -89,6 +88,6 @@ func (s *SensorFlappingMutation) Apply(ctx context.Context, obj types.DataObject
 		Mutation:  "sensor-flapping",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

@@ -25,7 +25,7 @@ type InterlockStaleSensor struct {
 }
 
 // NewInterlockStaleSensor creates a new InterlockStaleSensor.
-func NewInterlockStaleSensor(store adapter.StateStore, cfg Config) *InterlockStaleSensor {
+func NewInterlockStaleSensor(store adapter.SensorStore, cfg Config) *InterlockStaleSensor {
 	return &InterlockStaleSensor{
 		inner: mutation.NewStaleSensorMutation(store),
 		cfg:   cfg,
@@ -37,9 +37,9 @@ func (s *InterlockStaleSensor) Type() string { return "interlock-stale-sensor" }
 
 // Apply enriches params with PipelinePrefix and delegates to the underlying
 // StaleSensorMutation.
-func (s *InterlockStaleSensor) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *InterlockStaleSensor) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichSensorParams(params, s.cfg)
-	rec, err := s.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := s.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = s.Type()
 	}
@@ -54,7 +54,7 @@ type InterlockPhantomSensor struct {
 }
 
 // NewInterlockPhantomSensor creates a new InterlockPhantomSensor.
-func NewInterlockPhantomSensor(store adapter.StateStore, cfg Config) *InterlockPhantomSensor {
+func NewInterlockPhantomSensor(store adapter.SensorStore, cfg Config) *InterlockPhantomSensor {
 	return &InterlockPhantomSensor{
 		inner: mutation.NewPhantomSensorMutation(store),
 		cfg:   cfg,
@@ -66,9 +66,9 @@ func (s *InterlockPhantomSensor) Type() string { return "interlock-phantom-senso
 
 // Apply enriches params with PipelinePrefix and delegates to the underlying
 // PhantomSensorMutation.
-func (s *InterlockPhantomSensor) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *InterlockPhantomSensor) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichSensorParams(params, s.cfg)
-	rec, err := s.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := s.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = s.Type()
 	}
@@ -83,7 +83,7 @@ type InterlockSplitSensor struct {
 }
 
 // NewInterlockSplitSensor creates a new InterlockSplitSensor.
-func NewInterlockSplitSensor(store adapter.StateStore, cfg Config) *InterlockSplitSensor {
+func NewInterlockSplitSensor(store adapter.SensorStore, cfg Config) *InterlockSplitSensor {
 	return &InterlockSplitSensor{
 		inner: mutation.NewSplitSensorMutation(store),
 		cfg:   cfg,
@@ -95,9 +95,9 @@ func (s *InterlockSplitSensor) Type() string { return "interlock-split-sensor" }
 
 // Apply enriches params with PipelinePrefix and delegates to the underlying
 // SplitSensorMutation.
-func (s *InterlockSplitSensor) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *InterlockSplitSensor) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichSensorParams(params, s.cfg)
-	rec, err := s.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := s.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = s.Type()
 	}
@@ -112,7 +112,7 @@ type InterlockSensorFlapping struct {
 }
 
 // NewInterlockSensorFlapping creates a new InterlockSensorFlapping.
-func NewInterlockSensorFlapping(store adapter.StateStore, cfg Config) *InterlockSensorFlapping {
+func NewInterlockSensorFlapping(store adapter.SensorStore, cfg Config) *InterlockSensorFlapping {
 	return &InterlockSensorFlapping{
 		inner: mutation.NewSensorFlappingMutation(store),
 		cfg:   cfg,
@@ -124,9 +124,9 @@ func (s *InterlockSensorFlapping) Type() string { return "interlock-sensor-flapp
 
 // Apply enriches params with PipelinePrefix and delegates to the underlying
 // SensorFlappingMutation.
-func (s *InterlockSensorFlapping) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *InterlockSensorFlapping) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichSensorParams(params, s.cfg)
-	rec, err := s.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := s.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = s.Type()
 	}
@@ -141,7 +141,7 @@ type InterlockTimestampForgery struct {
 }
 
 // NewInterlockTimestampForgery creates a new InterlockTimestampForgery.
-func NewInterlockTimestampForgery(store adapter.StateStore, cfg Config) *InterlockTimestampForgery {
+func NewInterlockTimestampForgery(store adapter.SensorStore, cfg Config) *InterlockTimestampForgery {
 	return &InterlockTimestampForgery{
 		inner: mutation.NewTimestampForgeryMutation(store),
 		cfg:   cfg,
@@ -153,9 +153,9 @@ func (s *InterlockTimestampForgery) Type() string { return "interlock-timestamp-
 
 // Apply enriches params with PipelinePrefix and delegates to the underlying
 // TimestampForgeryMutation.
-func (s *InterlockTimestampForgery) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *InterlockTimestampForgery) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	enriched := enrichSensorParams(params, s.cfg)
-	rec, err := s.inner.Apply(ctx, obj, transport, enriched)
+	rec, err := s.inner.Apply(ctx, obj, transport, enriched, clock)
 	if err == nil {
 		rec.Mutation = s.Type()
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -13,11 +12,11 @@ import (
 // SplitSensorMutation writes multiple conflicting sensor values for the same
 // key in rapid succession, simulating a split-brain or race condition.
 type SplitSensorMutation struct {
-	store adapter.StateStore
+	store adapter.SensorStore
 }
 
-// NewSplitSensorMutation creates a SplitSensorMutation with the given state store.
-func NewSplitSensorMutation(store adapter.StateStore) *SplitSensorMutation {
+// NewSplitSensorMutation creates a SplitSensorMutation with the given sensor store.
+func NewSplitSensorMutation(store adapter.SensorStore) *SplitSensorMutation {
 	return &SplitSensorMutation{store: store}
 }
 
@@ -29,7 +28,7 @@ func (s *SplitSensorMutation) Type() string { return "split-sensor" }
 //   - "sensor_key" (required): sensor key identifier.
 //   - "pipeline" (required): pipeline the sensor belongs to.
 //   - "conflicting_values" (required): comma-separated status values (e.g., "ready,pending,ready").
-func (s *SplitSensorMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *SplitSensorMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	sensorKey, ok := params["sensor_key"]
 	if !ok || sensorKey == "" {
 		err := fmt.Errorf("split-sensor mutation: missing required param \"sensor_key\"")
@@ -54,7 +53,7 @@ func (s *SplitSensorMutation) Apply(ctx context.Context, obj types.DataObject, _
 			Pipeline:    pipeline,
 			Key:         sensorKey,
 			Status:      types.SensorStatus(v),
-			LastUpdated: time.Now(),
+			LastUpdated: clock.Now(),
 		}
 		if err := s.store.WriteSensor(ctx, pipeline, sensorKey, sensor); err != nil {
 			err = fmt.Errorf("split-sensor mutation: write sensor failed for status %q: %w", v, err)
@@ -67,6 +66,6 @@ func (s *SplitSensorMutation) Apply(ctx context.Context, obj types.DataObject, _
 		Mutation:  "split-sensor",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

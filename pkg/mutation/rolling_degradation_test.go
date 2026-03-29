@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -122,10 +123,10 @@ func TestRollingDegradationMutation_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := newMockTransport()
 			obj := types.DataObject{Key: "data/records.jsonl"}
-			transport.readData[obj.Key] = inputData
+			transport.ReadData[obj.Key] = inputData
 
 			m := &mutation.RollingDegradationMutation{}
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -206,7 +207,7 @@ func TestRollingDegradationMutation_ReadError(t *testing.T) {
 		"start_pct":     "10",
 		"end_pct":       "50",
 		"ramp_duration": "1h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -226,14 +227,14 @@ func TestRollingDegradationMutation_RampDurationRecorded(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.readData[obj.Key] = makeJSONL(inputRecords)
+	transport.ReadData[obj.Key] = makeJSONL(inputRecords)
 
 	m := &mutation.RollingDegradationMutation{}
 	record, err := m.Apply(context.Background(), obj, transport, map[string]string{
 		"start_pct":     "10",
 		"end_pct":       "50",
 		"ramp_duration": "2h30m",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

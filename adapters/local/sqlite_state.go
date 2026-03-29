@@ -14,8 +14,13 @@ import (
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
-// Compile-time interface assertion.
-var _ adapter.StateStore = (*SQLiteState)(nil)
+// Compile-time assertions: SQLiteState implements StateStore and all sub-interfaces.
+var (
+	_ adapter.StateStore   = (*SQLiteState)(nil)
+	_ adapter.SensorStore  = (*SQLiteState)(nil)
+	_ adapter.TriggerStore = (*SQLiteState)(nil)
+	_ adapter.EventStore   = (*SQLiteState)(nil)
+)
 
 // SQLiteState implements adapter.StateStore backed by a SQLite database.
 type SQLiteState struct {

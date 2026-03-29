@@ -20,7 +20,7 @@ func TestStartExperiment_CreatesRunningExperiment(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{newTestObject("a.csv")}, nil
 		},
 	}
@@ -68,7 +68,7 @@ func TestExperiment_CompletesAfterDuration(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{newTestObject("a.csv")}, nil
 		},
 	}
@@ -117,7 +117,7 @@ func TestExperiment_StopAbortsExperiment(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(ctx context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(ctx context.Context, _ string) ([]types.DataObject, error) {
 			// Block until context is canceled, keeping the engine running.
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -164,7 +164,7 @@ func TestExperiment_ManifestReturnsValidJSONL(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
@@ -230,7 +230,7 @@ func TestExperiment_StatsReturnsCorrectCounts(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
@@ -291,7 +291,7 @@ func TestExperiment_WaitBlocksUntilCompletion(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{newTestObject("a.csv")}, nil
 		},
 	}
@@ -378,7 +378,7 @@ func TestExperiment_BlastRadius_WithResolver(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("events-001.jsonl"),
 				newTestObject("events-002.jsonl"),
@@ -443,7 +443,7 @@ func TestExperiment_BlastRadius_NilResolver(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{newTestObject("events-001.jsonl")}, nil
 		},
 	}
@@ -487,7 +487,7 @@ func TestExperiment_BlastRadius_OnlyAppliedRecords(t *testing.T) {
 	// Two objects: only one is in "dry-run" so Applied=false; resolver must only
 	// be called for Applied=true records.
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("events-001.jsonl"),
 			}, nil
@@ -549,7 +549,7 @@ func TestExperiment_BlastRadius_ResolverErrorSkipped(t *testing.T) {
 	// Two objects processed; resolver returns error for the first, success for
 	// the second. BlastRadius must return 1 entry (the successful one).
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("events-001.jsonl"),
 				newTestObject("events-002.jsonl"),

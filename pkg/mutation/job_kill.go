@@ -3,7 +3,6 @@ package mutation
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -12,11 +11,11 @@ import (
 // JobKillMutation writes a "killed" status for a pipeline job, simulating a
 // job that was terminated mid-execution.
 type JobKillMutation struct {
-	store adapter.StateStore
+	store adapter.TriggerStore
 }
 
-// NewJobKillMutation creates a JobKillMutation with the given state store.
-func NewJobKillMutation(store adapter.StateStore) *JobKillMutation {
+// NewJobKillMutation creates a JobKillMutation with the given trigger store.
+func NewJobKillMutation(store adapter.TriggerStore) *JobKillMutation {
 	return &JobKillMutation{store: store}
 }
 
@@ -30,7 +29,7 @@ func (j *JobKillMutation) Type() string { return "job-kill" }
 //   - "date" (required): date string.
 //   - "kill_after_pct" (optional, default "50"): percentage completion before kill.
 //   - "job_type" (optional, default "glue"): type of job being killed.
-func (j *JobKillMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (j *JobKillMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pipeline, ok := params["pipeline"]
 	if !ok || pipeline == "" {
 		err := fmt.Errorf("job-kill mutation: missing required param \"pipeline\"")
@@ -75,6 +74,6 @@ func (j *JobKillMutation) Apply(ctx context.Context, obj types.DataObject, _ ada
 		Mutation:  "job-kill",
 		Params:    recordParams,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

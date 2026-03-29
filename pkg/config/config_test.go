@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/config"
@@ -526,5 +527,70 @@ emitter:
 	}
 	if emitter != nil {
 		t.Fatal("expected nil emitter for type=none")
+	}
+}
+
+func TestLoad_OversizedFile_Error(t *testing.T) {
+	t.Parallel()
+
+	// Create a file just over 1MB.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "huge.yaml")
+	data := make([]byte, 1<<20+1)
+	for i := range data {
+		data[i] = 'a'
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("expected error for oversized config file")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum") {
+		t.Errorf("error = %q, want message containing %q", err.Error(), "exceeds maximum")
+	}
+}
+
+func TestLoadFromBytes_OversizedData_Error(t *testing.T) {
+	t.Parallel()
+
+	data := make([]byte, 1<<20+1)
+	for i := range data {
+		data[i] = 'a'
+	}
+
+	_, err := config.LoadFromBytes(data)
+	if err == nil {
+		t.Fatal("expected error for oversized data")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum") {
+		t.Errorf("error = %q, want message containing %q", err.Error(), "exceeds maximum")
+	}
+}
+
+func TestLoad_ExactlyMaxSize_OK(t *testing.T) {
+	t.Parallel()
+
+	// Exactly 1MB should be accepted (it's valid YAML content that won't parse,
+	// but the size check should pass).
+	dir := t.TempDir()
+	path := filepath.Join(dir, "max.yaml")
+	// Use valid empty YAML padded with comments to reach exactly 1MB.
+	header := []byte("# padding\n")
+	data := make([]byte, 1<<20)
+	copy(data, header)
+	for i := len(header); i < len(data); i++ {
+		data[i] = '#'
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should not fail on size check (may fail on parse, but that's fine).
+	_, err := config.Load(path)
+	if err != nil && strings.Contains(err.Error(), "exceeds maximum") {
+		t.Fatalf("file at exactly 1MB should not be rejected for size: %v", err)
 	}
 }

@@ -138,7 +138,7 @@ func (e *Engine) probabilisticIteration(ctx context.Context, rng *rand.Rand) ([]
 			// may target the same object. A mutation can fail because a
 			// prior scenario already moved/deleted the file. We record the
 			// failure and continue rather than aborting the entire iteration.
-			record, err := m.Apply(ctx, obj, e.transport, sc.Mutation.Params)
+			record, err := m.Apply(ctx, obj, e.transport, sc.Mutation.Params, e.clock)
 			if err != nil {
 				records = append(records, types.MutationRecord{
 					ObjectKey: obj.Key,

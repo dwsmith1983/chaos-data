@@ -78,7 +78,7 @@ func TestProcessObject_PassthroughWhenKillSwitchDisabled(t *testing.T) {
 
 	transport := &mockTransport{}
 	emitter := &mockEmitter{}
-	safety := &mockSafety{enabled: false, maxSev: types.SeverityCritical}
+	safety := &mockSafety{Enabled: false, MaxSev: types.SeverityCritical}
 
 	reg := mutation.NewRegistry()
 	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
@@ -104,7 +104,7 @@ func TestProcessObject_PassthroughWhenKillSwitchDisabled(t *testing.T) {
 		t.Errorf("expected 0 records (passthrough), got %d", len(records))
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 0 {
 		t.Errorf("expected 0 events, got %d", len(events))
 	}
@@ -181,10 +181,7 @@ func TestProcessObject_AppliesMutationWhenScenarioMatches(t *testing.T) {
 	}
 
 	// Verify transport.Hold was called.
-	transport.mu.Lock()
-	calls := len(transport.holdCalls)
-	transport.mu.Unlock()
-	if calls != 1 {
+	if calls := len(transport.HoldCalls()); calls != 1 {
 		t.Errorf("transport.Hold called %d times, want 1", calls)
 	}
 }
@@ -215,7 +212,7 @@ func TestProcessObject_EmitsChaosEvent(t *testing.T) {
 		t.Fatalf("ProcessObject() error = %v", err)
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
@@ -241,8 +238,8 @@ func TestProcessObject_SkipsScenarioWhenSeverityTooHigh(t *testing.T) {
 	transport := &mockTransport{}
 	emitter := &mockEmitter{}
 	safety := &mockSafety{
-		enabled: true,
-		maxSev:  types.SeverityLow, // Only allow low severity.
+		Enabled: true,
+		MaxSev:  types.SeverityLow, // Only allow low severity.
 	}
 
 	reg := mutation.NewRegistry()
@@ -270,7 +267,7 @@ func TestProcessObject_SkipsScenarioWhenSeverityTooHigh(t *testing.T) {
 		t.Errorf("expected 0 records (skipped), got %d", len(records))
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 0 {
 		t.Errorf("expected 0 events, got %d", len(events))
 	}
@@ -337,7 +334,7 @@ func TestProcessObject_MultipleScenariosAllApplied(t *testing.T) {
 		t.Error("missing drop mutation record")
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 2 {
 		t.Errorf("expected 2 events, got %d", len(events))
 	}
@@ -374,9 +371,9 @@ func TestProcessObject_IsEnabledErrorReturnsError(t *testing.T) {
 
 	transport := &mockTransport{}
 	safety := &mockSafety{
-		enabled:    false,
-		enabledErr: errors.New("safety controller unavailable"),
-		maxSev:     types.SeverityCritical,
+		Enabled:    false,
+		EnabledErr: errors.New("safety controller unavailable"),
+		MaxSev:     types.SeverityCritical,
 	}
 
 	reg := mutation.NewRegistry()
@@ -398,8 +395,8 @@ func TestProcessObject_IsEnabledErrorReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("ProcessObject() error = nil, want error when IsEnabled fails")
 	}
-	if !errors.Is(err, safety.enabledErr) {
-		t.Errorf("error = %v, want wrapped %v", err, safety.enabledErr)
+	if !errors.Is(err, safety.EnabledErr) {
+		t.Errorf("error = %v, want wrapped %v", err, safety.EnabledErr)
 	}
 }
 
@@ -408,9 +405,9 @@ func TestProcessObject_MaxSeverityErrorReturnsError(t *testing.T) {
 
 	transport := &mockTransport{}
 	safety := &mockSafety{
-		enabled:   true,
-		maxSev:    types.SeverityCritical,
-		maxSevErr: errors.New("max severity lookup failed"),
+		Enabled:   true,
+		MaxSev:    types.SeverityCritical,
+		MaxSevErr: errors.New("max severity lookup failed"),
 	}
 
 	reg := mutation.NewRegistry()
@@ -432,8 +429,8 @@ func TestProcessObject_MaxSeverityErrorReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("ProcessObject() error = nil, want error when MaxSeverity fails")
 	}
-	if !errors.Is(err, safety.maxSevErr) {
-		t.Errorf("error = %v, want wrapped %v", err, safety.maxSevErr)
+	if !errors.Is(err, safety.MaxSevErr) {
+		t.Errorf("error = %v, want wrapped %v", err, safety.MaxSevErr)
 	}
 }
 
@@ -443,7 +440,7 @@ func TestRun_ProcessesAllListedObjects(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
@@ -487,7 +484,7 @@ func TestRun_ProcessesAllListedObjects(t *testing.T) {
 		}
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 3 {
 		t.Errorf("expected 3 events, got %d", len(events))
 	}
@@ -497,7 +494,7 @@ func TestRun_EmptyStagingReturnsEmptyRecords(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return nil, nil
 		},
 	}
@@ -528,14 +525,14 @@ func TestRun_StopsOnContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
 				newTestObject("c.csv"),
 			}, nil
 		},
-		holdFn: func(_ context.Context, _ string, _ time.Time) error {
+		HoldFn: func(_ context.Context, _ string, _ time.Time) error {
 			n := callCount.Add(1)
 			if n >= 2 {
 				cancel()
@@ -615,15 +612,12 @@ func TestProcessObject_DryRunSkipsApply(t *testing.T) {
 	}
 
 	// Verify transport.Hold was NOT called (mutation not actually applied).
-	transport.mu.Lock()
-	holdCount := len(transport.holdCalls)
-	transport.mu.Unlock()
-	if holdCount != 0 {
+	if holdCount := len(transport.HoldCalls()); holdCount != 0 {
 		t.Errorf("transport.Hold called %d times, want 0 in dry-run mode", holdCount)
 	}
 
 	// Verify emitter.Emit WAS called (we still observe what would happen).
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
@@ -637,7 +631,7 @@ func TestProcessObject_DryRunStillChecksSafety(t *testing.T) {
 
 	transport := &mockTransport{}
 	emitter := &mockEmitter{}
-	safety := &mockSafety{enabled: false, maxSev: types.SeverityCritical}
+	safety := &mockSafety{Enabled: false, MaxSev: types.SeverityCritical}
 
 	reg := mutation.NewRegistry()
 	if err := reg.Register(&mutation.DelayMutation{}); err != nil {
@@ -666,7 +660,7 @@ func TestProcessObject_DryRunStillChecksSafety(t *testing.T) {
 		t.Errorf("expected 0 records (kill switch disabled), got %d", len(records))
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 0 {
 		t.Errorf("expected 0 events, got %d", len(events))
 	}
@@ -680,9 +674,9 @@ func TestProcessObject_SkipsOnCooldown(t *testing.T) {
 	transport := &mockTransport{}
 	emitter := &mockEmitter{}
 	safety := &mockSafety{
-		enabled:     true,
-		maxSev:      types.SeverityCritical,
-		cooldownErr: adapter.ErrCooldownActive,
+		Enabled:     true,
+		MaxSev:      types.SeverityCritical,
+		CooldownErr: adapter.ErrCooldownActive,
 	}
 
 	reg := mutation.NewRegistry()
@@ -709,7 +703,7 @@ func TestProcessObject_SkipsOnCooldown(t *testing.T) {
 		t.Errorf("expected 0 records (cooldown active), got %d", len(records))
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 0 {
 		t.Errorf("expected 0 events, got %d", len(events))
 	}
@@ -721,9 +715,9 @@ func TestProcessObject_RecordsInjectionAfterApply(t *testing.T) {
 	transport := &mockTransport{}
 	emitter := &mockEmitter{}
 	safety := &mockSafety{
-		enabled:    true,
-		maxSev:     types.SeverityCritical,
-		slaAllowed: true, // SLA window is open; mutation must proceed so RecordInjection is called
+		Enabled:    true,
+		MaxSev:     types.SeverityCritical,
+		SLAAllowed: true, // SLA window is open; mutation must proceed so RecordInjection is called
 	}
 
 	reg := mutation.NewRegistry()
@@ -747,11 +741,7 @@ func TestProcessObject_RecordsInjectionAfterApply(t *testing.T) {
 		t.Fatalf("ProcessObject() error = %v", err)
 	}
 
-	safety.mu.Lock()
-	calls := make([]string, len(safety.recordInjCalls))
-	copy(calls, safety.recordInjCalls)
-	safety.mu.Unlock()
-
+	calls := safety.GetRecordInjCalls()
 	if len(calls) != 1 {
 		t.Fatalf("expected 1 RecordInjection call, got %d", len(calls))
 	}
@@ -766,9 +756,9 @@ func TestProcessObject_CooldownErrorPropagatesNonSentinel(t *testing.T) {
 	transport := &mockTransport{}
 	dbErr := errors.New("db down")
 	safety := &mockSafety{
-		enabled:     true,
-		maxSev:      types.SeverityCritical,
-		cooldownErr: dbErr,
+		Enabled:     true,
+		MaxSev:      types.SeverityCritical,
+		CooldownErr: dbErr,
 	}
 
 	reg := mutation.NewRegistry()
@@ -805,9 +795,9 @@ func TestProcessObject_SkipsScenarioInSLAWindow(t *testing.T) {
 	// slaAllowed=false means the pipeline IS within its SLA window —
 	// chaos injection must be skipped.
 	safety := &mockSafety{
-		enabled:    true,
-		maxSev:     types.SeverityCritical,
-		slaAllowed: false,
+		Enabled:    true,
+		MaxSev:     types.SeverityCritical,
+		SLAAllowed: false,
 	}
 
 	reg := mutation.NewRegistry()
@@ -835,7 +825,7 @@ func TestProcessObject_SkipsScenarioInSLAWindow(t *testing.T) {
 	}
 
 	// No mutation was applied, so no event should have been emitted.
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 0 {
 		t.Errorf("expected 0 events (SLA window active), got %d", len(events))
 	}
@@ -847,9 +837,9 @@ func TestProcessObject_SLAWindowError(t *testing.T) {
 	transport := &mockTransport{}
 	slaErr := errors.New("SLA schedule unavailable")
 	safety := &mockSafety{
-		enabled: true,
-		maxSev:  types.SeverityCritical,
-		slaErr:  slaErr,
+		Enabled: true,
+		MaxSev:  types.SeverityCritical,
+		SLAErr:  slaErr,
 	}
 
 	reg := mutation.NewRegistry()
@@ -883,7 +873,7 @@ func TestRun_StopsInjectingWhenBlastRadiusExceeded(t *testing.T) {
 	// affected target, so only objects before that threshold should be mutated.
 	// Crucially, Run must NOT return an error itself (fail-open passthrough).
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
@@ -894,12 +884,12 @@ func TestRun_StopsInjectingWhenBlastRadiusExceeded(t *testing.T) {
 
 	blastExceeded := errors.New("blast radius exceeded")
 	safety := &mockSafety{
-		enabled:    true,
-		maxSev:     types.SeverityCritical,
-		slaAllowed: true, // SLA window is open; mutations may proceed
+		Enabled:    true,
+		MaxSev:     types.SeverityCritical,
+		SLAAllowed: true, // SLA window is open; mutations may proceed
 		// Return error on the first CheckBlastRadius call — after the first
 		// object is processed and its target added to the affected set.
-		blastRadiusFn: func(stats types.ExperimentStats) error {
+		BlastRadiusFn: func(stats types.ExperimentStats) error {
 			if stats.AffectedTargets >= 1 {
 				return blastExceeded
 			}
@@ -946,7 +936,7 @@ func TestRun_TracksAffectedPctAndCallsBlastRadius(t *testing.T) {
 	// After Run, blast radius must have been called with accurate stats reflecting
 	// only the matched targets.
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("hit/a.csv"),
 				newTestObject("miss/b.csv"),
@@ -958,10 +948,10 @@ func TestRun_TracksAffectedPctAndCallsBlastRadius(t *testing.T) {
 
 	var capturedStats []types.ExperimentStats
 	safety := &mockSafety{
-		enabled:    true,
-		maxSev:     types.SeverityCritical,
-		slaAllowed: true, // SLA window is open; mutations may proceed
-		blastRadiusFn: func(stats types.ExperimentStats) error {
+		Enabled:    true,
+		MaxSev:     types.SeverityCritical,
+		SLAAllowed: true, // SLA window is open; mutations may proceed
+		BlastRadiusFn: func(stats types.ExperimentStats) error {
 			capturedStats = append(capturedStats, stats)
 			return nil
 		},
@@ -1030,24 +1020,24 @@ func TestRun_TracksHeldBytesAndMutationsApplied(t *testing.T) {
 	}
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
 				newTestObject("c.csv"),
 			}, nil
 		},
-		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
+		ListHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return heldObjects, nil
 		},
 	}
 
 	var capturedStats []types.ExperimentStats
 	safety := &mockSafety{
-		enabled:    true,
-		maxSev:     types.SeverityCritical,
-		slaAllowed: true,
-		blastRadiusFn: func(stats types.ExperimentStats) error {
+		Enabled:    true,
+		MaxSev:     types.SeverityCritical,
+		SLAAllowed: true,
+		BlastRadiusFn: func(stats types.ExperimentStats) error {
 			capturedStats = append(capturedStats, stats)
 			return nil
 		},
@@ -1101,22 +1091,22 @@ func TestRun_ListHeldErrorIsIgnored(t *testing.T) {
 	// ListHeld returns an error, but Run() should still succeed (fail-open)
 	// and mutations should still be applied.
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
 			}, nil
 		},
-		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
+		ListHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return nil, errors.New("storage unavailable")
 		},
 	}
 
 	safety := &mockSafety{
-		enabled:    true,
-		maxSev:     types.SeverityCritical,
-		slaAllowed: true,
-		blastRadiusFn: func(stats types.ExperimentStats) error {
+		Enabled:    true,
+		MaxSev:     types.SeverityCritical,
+		SLAAllowed: true,
+		BlastRadiusFn: func(stats types.ExperimentStats) error {
 			return nil
 		},
 	}
@@ -1162,7 +1152,7 @@ func TestRun_StopsWhenMaxMutationsExceeded(t *testing.T) {
 	// Five objects; blast radius check returns error when MutationsApplied > 2.
 	// Run must stop injecting and return fail-open (no error to caller).
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
@@ -1175,10 +1165,10 @@ func TestRun_StopsWhenMaxMutationsExceeded(t *testing.T) {
 
 	mutationsLimit := errors.New("blast radius exceeded: mutations limit")
 	safety := &mockSafety{
-		enabled:    true,
-		maxSev:     types.SeverityCritical,
-		slaAllowed: true,
-		blastRadiusFn: func(stats types.ExperimentStats) error {
+		Enabled:    true,
+		MaxSev:     types.SeverityCritical,
+		SLAAllowed: true,
+		BlastRadiusFn: func(stats types.ExperimentStats) error {
 			if stats.MutationsApplied > 2 {
 				return mutationsLimit
 			}
@@ -1422,7 +1412,7 @@ func TestEvaluateAssertions_NoTargetValidator_AllTargetsEnterPollLoop(t *testing
 func TestEvaluateAssertions_DataStateNative(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		readFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
+		ReadFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("data")), nil
 		},
 	}
@@ -1449,7 +1439,7 @@ func TestEvaluateAssertions_DataStateNative(t *testing.T) {
 func TestRun_AssertWaitTrue_EmitsAssertionEvent(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{newTestObject("a.csv")}, nil
 		},
 	}
@@ -1482,7 +1472,7 @@ func TestRun_AssertWaitTrue_EmitsAssertionEvent(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	// Should have at least 2 events: the mutation event + the assertion event.
 	var assertEvent *types.ChaosEvent
 	for i := range events {
@@ -1505,7 +1495,7 @@ func TestRun_AssertWaitTrue_EmitsAssertionEvent(t *testing.T) {
 func TestRun_AssertWaitFalse_WritesUnevaluated(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{newTestObject("a.csv")}, nil
 		},
 	}
@@ -1532,7 +1522,7 @@ func TestRun_AssertWaitFalse_WritesUnevaluated(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	var assertEvent *types.ChaosEvent
 	for i := range events {
 		if events[i].Mutation == "assertion_evaluation" {
@@ -1614,7 +1604,7 @@ func TestEngine_ProcessObject_UsesClockForTimestamps(t *testing.T) {
 	if !records[0].Timestamp.Equal(frozen) {
 		t.Errorf("record timestamp = %v, want %v", records[0].Timestamp, frozen)
 	}
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) > 0 && !events[0].Timestamp.Equal(frozen) {
 		t.Errorf("event timestamp = %v, want %v", events[0].Timestamp, frozen)
 	}

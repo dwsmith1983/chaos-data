@@ -899,7 +899,7 @@ func TestE2E_DryRun_NoSideEffects(t *testing.T) {
 	}
 
 	// Emitter still receives events.
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 1 {
 		t.Errorf("expected 1 event emitted, got %d", len(events))
 	}

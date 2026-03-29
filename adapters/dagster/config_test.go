@@ -1,6 +1,7 @@
 package dagster_test
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -164,5 +165,115 @@ func TestConfig_Defaults_IsNoOp(t *testing.T) {
 					tt.cfg.RepositoryName, before.RepositoryName)
 			}
 		})
+	}
+}
+
+func TestConfig_Validate_HTTPWarning(t *testing.T) {
+	var buf bytes.Buffer
+	restore := dagster.SetWarnWriter(&buf)
+	defer restore()
+
+	cfg := dagster.Config{URL: "http://localhost:3000/graphql"}
+	cfg.Defaults()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if output == "" {
+		t.Error("expected HTTP warning, got nothing")
+	}
+	if !strings.Contains(output, "http://") {
+		t.Errorf("expected warning to mention http://, got: %q", output)
+	}
+}
+
+func TestConfig_Validate_HTTPSNoWarning(t *testing.T) {
+	var buf bytes.Buffer
+	restore := dagster.SetWarnWriter(&buf)
+	defer restore()
+
+	cfg := dagster.Config{URL: "https://dagster.example.com/graphql"}
+	cfg.Defaults()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if output != "" {
+		t.Errorf("expected no warning for HTTPS URL, got: %q", output)
+	}
+}
+
+func TestConfig_Redacted_MasksToken(t *testing.T) {
+	t.Parallel()
+
+	cfg := dagster.Config{
+		URL: "https://dagster.example.com/graphql",
+		Headers: map[string]string{
+			"Dagster-Cloud-Api-Token": "secret-token-123",
+			"X-Custom":               "keep-me",
+		},
+		RepositoryLocationName: "loc",
+		RepositoryName:         "repo",
+	}
+	redacted := cfg.Redacted()
+
+	if redacted.Headers["Dagster-Cloud-Api-Token"] != "[REDACTED]" {
+		t.Errorf("Redacted().Headers[Dagster-Cloud-Api-Token] = %q, want %q",
+			redacted.Headers["Dagster-Cloud-Api-Token"], "[REDACTED]")
+	}
+	if redacted.Headers["X-Custom"] != "keep-me" {
+		t.Errorf("Redacted().Headers[X-Custom] = %q, want %q",
+			redacted.Headers["X-Custom"], "keep-me")
+	}
+	// Original must not be modified.
+	if cfg.Headers["Dagster-Cloud-Api-Token"] != "secret-token-123" {
+		t.Errorf("original token header mutated to %q", cfg.Headers["Dagster-Cloud-Api-Token"])
+	}
+	// Other fields preserved.
+	if redacted.URL != cfg.URL {
+		t.Errorf("Redacted().URL = %q, want %q", redacted.URL, cfg.URL)
+	}
+	if redacted.RepositoryLocationName != cfg.RepositoryLocationName {
+		t.Errorf("Redacted().RepositoryLocationName = %q, want %q",
+			redacted.RepositoryLocationName, cfg.RepositoryLocationName)
+	}
+	if redacted.RepositoryName != cfg.RepositoryName {
+		t.Errorf("Redacted().RepositoryName = %q, want %q",
+			redacted.RepositoryName, cfg.RepositoryName)
+	}
+}
+
+func TestConfig_Redacted_NilHeaders(t *testing.T) {
+	t.Parallel()
+
+	cfg := dagster.Config{
+		URL: "https://dagster.example.com/graphql",
+	}
+	redacted := cfg.Redacted()
+
+	if redacted.Headers != nil {
+		t.Errorf("Redacted().Headers = %v, want nil when original is nil", redacted.Headers)
+	}
+}
+
+func TestConfig_Redacted_NoTokenHeader(t *testing.T) {
+	t.Parallel()
+
+	cfg := dagster.Config{
+		URL: "https://dagster.example.com/graphql",
+		Headers: map[string]string{
+			"X-Custom": "value",
+		},
+	}
+	redacted := cfg.Redacted()
+
+	if redacted.Headers["X-Custom"] != "value" {
+		t.Errorf("Redacted().Headers[X-Custom] = %q, want %q",
+			redacted.Headers["X-Custom"], "value")
+	}
+	if _, ok := redacted.Headers["Dagster-Cloud-Api-Token"]; ok {
+		t.Error("Redacted() should not add Dagster-Cloud-Api-Token if not present")
 	}
 }

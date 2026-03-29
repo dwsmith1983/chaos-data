@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -70,10 +71,10 @@ func TestMultiDayMutation_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := newMockTransport()
 			obj := types.DataObject{Key: "data/records.jsonl"}
-			transport.readData[obj.Key] = inputData
+			transport.ReadData[obj.Key] = inputData
 
 			m := &mutation.MultiDayMutation{}
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -123,7 +124,7 @@ func TestMultiDayMutation_ReadError(t *testing.T) {
 	m := &mutation.MultiDayMutation{}
 	record, err := m.Apply(context.Background(), obj, transport, map[string]string{
 		"days": "2024-01-15",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

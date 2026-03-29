@@ -25,7 +25,7 @@ func (r *RollingDegradationMutation) Type() string { return "rolling-degradation
 //   - "start_pct" (required): starting corruption percentage (recorded but end_pct used for apply).
 //   - "end_pct" (required): ending corruption percentage (0-100).
 //   - "ramp_duration" (required): duration string for the ramp period (recorded in params).
-func (r *RollingDegradationMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (r *RollingDegradationMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	startPctStr, ok := params["start_pct"]
 	if !ok || startPctStr == "" {
 		err := fmt.Errorf("rolling-degradation mutation: missing required param \"start_pct\"")
@@ -104,6 +104,6 @@ func (r *RollingDegradationMutation) Apply(ctx context.Context, obj types.DataOb
 		Mutation:  "rolling-degradation",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

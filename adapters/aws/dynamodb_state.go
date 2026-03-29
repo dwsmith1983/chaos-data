@@ -13,8 +13,13 @@ import (
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
-// Compile-time assertion: DynamoDBState implements adapter.StateStore.
-var _ adapter.StateStore = (*DynamoDBState)(nil)
+// Compile-time assertions: DynamoDBState implements StateStore and all sub-interfaces.
+var (
+	_ adapter.StateStore   = (*DynamoDBState)(nil)
+	_ adapter.SensorStore  = (*DynamoDBState)(nil)
+	_ adapter.TriggerStore = (*DynamoDBState)(nil)
+	_ adapter.EventStore   = (*DynamoDBState)(nil)
+)
 
 // DynamoDBState implements adapter.StateStore backed by a single DynamoDB table.
 type DynamoDBState struct {

@@ -25,7 +25,7 @@ func (p *PostRunDriftMutation) Type() string { return "post-run-drift" }
 
 // Apply reads JSONL, splits by partition key/value, writes on-time records
 // to output, and holds late records via HoldData for delayed delivery.
-func (p *PostRunDriftMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (p *PostRunDriftMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	const mutType = "post-run-drift"
 
 	partKey := params["partition_key"]
@@ -151,8 +151,8 @@ func (p *PostRunDriftMutation) Apply(ctx context.Context, obj types.DataObject, 
 	}
 
 	// Compute drift key and hold late records.
-	driftKey := driftKeyName(obj.Key)
-	releaseAt := time.Now().Add(driftDelay)
+	driftKey := driftKeyName(obj.Key, clock)
+	releaseAt := clock.Now().Add(driftDelay)
 	if err := transport.HoldData(ctx, driftKey, &late, releaseAt); err != nil {
 		err = fmt.Errorf("%s: hold drift data failed: %w", mutType, err)
 		return types.MutationRecord{Applied: false, Mutation: mutType, Error: err.Error()}, err
@@ -163,7 +163,7 @@ func (p *PostRunDriftMutation) Apply(ctx context.Context, obj types.DataObject, 
 		Mutation:  mutType,
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }
 
@@ -182,12 +182,12 @@ func splitJSONL(data []byte) [][]byte {
 // driftKeyName generates a drift key from the original key by inserting
 // "_drift_<unix>" before the extension.
 // Example: "ingest/data.jsonl" → "ingest/data_drift_1710748200.jsonl"
-func driftKeyName(key string) string {
+func driftKeyName(key string, clock adapter.Clock) string {
 	dir := filepath.Dir(key)
 	base := filepath.Base(key)
 	ext := filepath.Ext(base)
 	name := strings.TrimSuffix(base, ext)
-	driftBase := fmt.Sprintf("%s_drift_%d%s", name, time.Now().Unix(), ext)
+	driftBase := fmt.Sprintf("%s_drift_%d%s", name, clock.Now().Unix(), ext)
 	if dir == "." {
 		return driftBase
 	}

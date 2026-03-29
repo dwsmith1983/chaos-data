@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -100,7 +101,7 @@ func TestSplitSensorMutation_Apply(t *testing.T) {
 			s := mutation.NewSplitSensorMutation(store)
 			obj := types.DataObject{Key: "test/data.csv"}
 
-			record, err := s.Apply(context.Background(), obj, transport, tt.params)
+			record, err := s.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -150,7 +151,7 @@ func TestSplitSensorMutation_Apply(t *testing.T) {
 
 func TestSplitSensorMutation_WriteSensorError(t *testing.T) {
 	store := newMockStateStore()
-	store.writeSensorErr = true
+	store.WriteSensorErr = true
 	transport := newMockTransport()
 	s := mutation.NewSplitSensorMutation(store)
 	obj := types.DataObject{Key: "test/data.csv"}
@@ -159,7 +160,7 @@ func TestSplitSensorMutation_WriteSensorError(t *testing.T) {
 		"sensor_key":         "sensor-1",
 		"pipeline":           "etl-daily",
 		"conflicting_values": "ready,pending",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

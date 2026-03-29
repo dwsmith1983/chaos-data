@@ -20,7 +20,7 @@ func TestRunProbabilistic_AppliesMutationsBasedOnProbability(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 				newTestObject("b.csv"),
@@ -81,7 +81,7 @@ func TestRunProbabilistic_ContextCancellationStopsLoop(t *testing.T) {
 	var listCalls atomic.Int32
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			listCalls.Add(1)
 			return []types.DataObject{newTestObject("a.csv")}, nil
 		},
@@ -134,7 +134,7 @@ func TestRunProbabilistic_ZeroProbabilityNeverSelected(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 			}, nil
@@ -173,7 +173,7 @@ func TestRunProbabilistic_ZeroProbabilityNeverSelected(t *testing.T) {
 		t.Errorf("expected 0 records for zero-probability scenario, got %d", len(records))
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 0 {
 		t.Errorf("expected 0 events, got %d", len(events))
 	}
@@ -183,7 +183,7 @@ func TestRunProbabilistic_MultipleIterationsAccumulateRecords(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 			}, nil
@@ -224,7 +224,7 @@ func TestRunProbabilistic_MultipleIterationsAccumulateRecords(t *testing.T) {
 		t.Errorf("expected at least 3 accumulated records, got %d", len(records))
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != len(records) {
 		t.Errorf("events count %d != records count %d", len(events), len(records))
 	}
@@ -234,7 +234,7 @@ func TestProbabilisticIteration_SkipsOnCooldown(t *testing.T) {
 	t.Parallel()
 
 	transport := &mockTransport{
-		listFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
+		ListFn: func(_ context.Context, _ string) ([]types.DataObject, error) {
 			return []types.DataObject{
 				newTestObject("a.csv"),
 			}, nil
@@ -242,9 +242,9 @@ func TestProbabilisticIteration_SkipsOnCooldown(t *testing.T) {
 	}
 	emitter := &mockEmitter{}
 	safety := &mockSafety{
-		enabled:     true,
-		maxSev:      types.SeverityCritical,
-		cooldownErr: adapter.ErrCooldownActive,
+		Enabled:     true,
+		MaxSev:      types.SeverityCritical,
+		CooldownErr: adapter.ErrCooldownActive,
 	}
 
 	reg := mutation.NewRegistry()
@@ -279,7 +279,7 @@ func TestProbabilisticIteration_SkipsOnCooldown(t *testing.T) {
 		t.Errorf("expected 0 records (cooldown active), got %d", len(records))
 	}
 
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 0 {
 		t.Errorf("expected 0 events, got %d", len(events))
 	}

@@ -3,7 +3,6 @@ package mutation
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -12,11 +11,11 @@ import (
 // FalseSuccessMutation writes a "succeeded" status for a pipeline trigger,
 // simulating a job that reports success without producing expected output.
 type FalseSuccessMutation struct {
-	store adapter.StateStore
+	store adapter.TriggerStore
 }
 
-// NewFalseSuccessMutation creates a FalseSuccessMutation with the given state store.
-func NewFalseSuccessMutation(store adapter.StateStore) *FalseSuccessMutation {
+// NewFalseSuccessMutation creates a FalseSuccessMutation with the given trigger store.
+func NewFalseSuccessMutation(store adapter.TriggerStore) *FalseSuccessMutation {
 	return &FalseSuccessMutation{store: store}
 }
 
@@ -30,7 +29,7 @@ func (f *FalseSuccessMutation) Type() string { return "false-success" }
 //   - "date" (required): date string.
 //   - "job_type" (optional, default "glue"): type of job.
 //   - "missing_output" (optional): path of expected output that is missing.
-func (f *FalseSuccessMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (f *FalseSuccessMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pipeline, ok := params["pipeline"]
 	if !ok || pipeline == "" {
 		err := fmt.Errorf("false-success mutation: missing required param \"pipeline\"")
@@ -72,6 +71,6 @@ func (f *FalseSuccessMutation) Apply(ctx context.Context, obj types.DataObject, 
 		Mutation:  "false-success",
 		Params:    recordParams,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

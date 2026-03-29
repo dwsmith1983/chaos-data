@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -123,14 +124,14 @@ func TestCorruptMutation_Apply(t *testing.T) {
 			obj := types.DataObject{Key: "test/data.jsonl"}
 
 			if tt.readData != nil {
-				transport.readData[obj.Key] = tt.readData
+				transport.ReadData[obj.Key] = tt.readData
 			}
 			if tt.readErr != nil {
-				transport.readErr[obj.Key] = tt.readErr
+				transport.ReadErr[obj.Key] = tt.readErr
 			}
 
 			c := &mutation.CorruptMutation{}
-			record, err := c.Apply(context.Background(), obj, transport, tt.params)
+			record, err := c.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -239,7 +240,7 @@ func TestCorruptMutation_NullCorruption(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "test/single.jsonl"}
-	transport.readData[obj.Key] = input
+	transport.ReadData[obj.Key] = input
 
 	c := &mutation.CorruptMutation{}
 	params := map[string]string{
@@ -247,7 +248,7 @@ func TestCorruptMutation_NullCorruption(t *testing.T) {
 		"corruption_type": "null",
 	}
 
-	_, err := c.Apply(context.Background(), obj, transport, params)
+	_, err := c.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,12 +292,12 @@ func TestCorruptMutation_ZeroPctNoCorruption(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "test/zero.jsonl"}
-	transport.readData[obj.Key] = inputData
+	transport.ReadData[obj.Key] = inputData
 
 	c := &mutation.CorruptMutation{}
 	record, err := c.Apply(context.Background(), obj, transport, map[string]string{
 		"affected_pct": "0",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -333,12 +334,12 @@ func TestCorruptMutation_UnsupportedCorruptionType(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "test/unsupported.jsonl"}
-	transport.readData[obj.Key] = inputData
+	transport.ReadData[obj.Key] = inputData
 
 	c := &mutation.CorruptMutation{}
 	record, err := c.Apply(context.Background(), obj, transport, map[string]string{
 		"corruption_type": "shuffle",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error for unsupported corruption type, got nil")
 	}
@@ -353,10 +354,10 @@ func TestCorruptMutation_UnsupportedCorruptionType(t *testing.T) {
 func TestCorruptMutation_EmptyJSONLBody(t *testing.T) {
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "test/empty.jsonl"}
-	transport.readData[obj.Key] = []byte{}
+	transport.ReadData[obj.Key] = []byte{}
 
 	c := &mutation.CorruptMutation{}
-	record, err := c.Apply(context.Background(), obj, transport, map[string]string{})
+	record, err := c.Apply(context.Background(), obj, transport, map[string]string{}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

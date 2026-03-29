@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -387,12 +388,12 @@ func TestPostRunDriftMutation_Apply(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := newMockTransport()
-			transport.readData[objKey] = tt.data
+			transport.ReadData[objKey] = tt.data
 
 			m := &mutation.PostRunDriftMutation{}
 			obj := types.DataObject{Key: objKey}
 
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -447,7 +448,7 @@ func TestPostRunDriftMutation_HoldDataCalled(t *testing.T) {
 	data := buildJSONLRecords(6, "region", "eu-west", matchSet(3, 4, 5))
 
 	transport := newMockTransport()
-	transport.readData[objKey] = data
+	transport.ReadData[objKey] = data
 
 	before := time.Now()
 	m := &mutation.PostRunDriftMutation{}
@@ -457,7 +458,7 @@ func TestPostRunDriftMutation_HoldDataCalled(t *testing.T) {
 		"partition_value": "eu-west",
 		"late_pct":        "100",
 		"drift_delay":     "2h",
-	})
+	}, adapter.NewWallClock())
 	after := time.Now()
 
 	if err != nil {
@@ -495,7 +496,7 @@ func TestPostRunDriftMutation_DefaultLatePct(t *testing.T) {
 	data := buildJSONLRecords(10, "env", "staging", matchSet(0, 1, 2, 3, 4, 5, 6, 7, 8, 9))
 
 	transport := newMockTransport()
-	transport.readData[objKey] = data
+	transport.ReadData[objKey] = data
 
 	m := &mutation.PostRunDriftMutation{}
 	obj := types.DataObject{Key: objKey}
@@ -504,7 +505,7 @@ func TestPostRunDriftMutation_DefaultLatePct(t *testing.T) {
 		"partition_value": "staging",
 		// late_pct omitted → defaults to 20
 		"drift_delay": "30m",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -532,7 +533,7 @@ func TestPostRunDriftMutation_ReadError(t *testing.T) {
 		"partition_key":   "date",
 		"partition_value": "2024-01-15",
 		"drift_delay":     "1h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error on missing key, got nil")
 	}
@@ -545,7 +546,7 @@ func TestPostRunDriftMutation_ReadError(t *testing.T) {
 func TestPostRunDriftMutation_EmptyInput(t *testing.T) {
 	const objKey = "data/empty.jsonl"
 	transport := newMockTransport()
-	transport.readData[objKey] = []byte{}
+	transport.ReadData[objKey] = []byte{}
 
 	m := &mutation.PostRunDriftMutation{}
 	obj := types.DataObject{Key: objKey}
@@ -553,7 +554,7 @@ func TestPostRunDriftMutation_EmptyInput(t *testing.T) {
 		"partition_key":   "date",
 		"partition_value": "2024-01-15",
 		"drift_delay":     "1h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error for empty input, got nil")
 	}
@@ -566,7 +567,7 @@ func TestPostRunDriftMutation_EmptyInput(t *testing.T) {
 func TestPostRunDriftMutation_NegativeDriftDelay(t *testing.T) {
 	const objKey = "data/test.jsonl"
 	transport := newMockTransport()
-	transport.readData[objKey] = buildJSONLRecords(2, "date", "2024-01-15", matchSet(0))
+	transport.ReadData[objKey] = buildJSONLRecords(2, "date", "2024-01-15", matchSet(0))
 
 	m := &mutation.PostRunDriftMutation{}
 	obj := types.DataObject{Key: objKey}
@@ -574,7 +575,7 @@ func TestPostRunDriftMutation_NegativeDriftDelay(t *testing.T) {
 		"partition_key":   "date",
 		"partition_value": "2024-01-15",
 		"drift_delay":     "-1h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error for negative drift_delay, got nil")
 	}
@@ -587,7 +588,7 @@ func TestPostRunDriftMutation_NegativeDriftDelay(t *testing.T) {
 func TestPostRunDriftMutation_InvalidLatePctNonNumeric(t *testing.T) {
 	const objKey = "data/test.jsonl"
 	transport := newMockTransport()
-	transport.readData[objKey] = buildJSONLRecords(2, "date", "2024-01-15", matchSet(0))
+	transport.ReadData[objKey] = buildJSONLRecords(2, "date", "2024-01-15", matchSet(0))
 
 	m := &mutation.PostRunDriftMutation{}
 	obj := types.DataObject{Key: objKey}
@@ -596,7 +597,7 @@ func TestPostRunDriftMutation_InvalidLatePctNonNumeric(t *testing.T) {
 		"partition_value": "2024-01-15",
 		"late_pct":        "abc",
 		"drift_delay":     "1h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error for non-numeric late_pct, got nil")
 	}
@@ -620,7 +621,7 @@ func TestPostRunDriftMutation_LateRecordsFromTail(t *testing.T) {
 	data := buf.Bytes()
 
 	transport := newMockTransport()
-	transport.readData[objKey] = data
+	transport.ReadData[objKey] = data
 
 	m := &mutation.PostRunDriftMutation{}
 	obj := types.DataObject{Key: objKey}
@@ -629,7 +630,7 @@ func TestPostRunDriftMutation_LateRecordsFromTail(t *testing.T) {
 		"partition_value": "2024-01-15",
 		"late_pct":        "40",
 		"drift_delay":     "1h",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

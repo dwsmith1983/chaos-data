@@ -12,11 +12,11 @@ import (
 // CascadeDelayMutation holds data and writes a stale sensor status, simulating
 // a cascading delay where upstream data is late and the sensor reflects staleness.
 type CascadeDelayMutation struct {
-	store adapter.StateStore
+	store adapter.SensorStore
 }
 
-// NewCascadeDelayMutation creates a CascadeDelayMutation with the given state store.
-func NewCascadeDelayMutation(store adapter.StateStore) *CascadeDelayMutation {
+// NewCascadeDelayMutation creates a CascadeDelayMutation with the given sensor store.
+func NewCascadeDelayMutation(store adapter.SensorStore) *CascadeDelayMutation {
 	return &CascadeDelayMutation{store: store}
 }
 
@@ -28,7 +28,7 @@ func (c *CascadeDelayMutation) Type() string { return "cascade-delay" }
 //   - "upstream_pipeline" (required): pipeline name of the upstream data source.
 //   - "delay_duration" (required): Go duration string for how long to hold the data.
 //   - "sensor_key" (optional, default "arrival"): sensor key to mark as stale.
-func (c *CascadeDelayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (c *CascadeDelayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pipeline, ok := params["upstream_pipeline"]
 	if !ok || pipeline == "" {
 		err := fmt.Errorf("cascade-delay mutation: missing required param \"upstream_pipeline\"")
@@ -52,7 +52,7 @@ func (c *CascadeDelayMutation) Apply(ctx context.Context, obj types.DataObject, 
 	}
 
 	// Hold the object until now + duration.
-	releaseAt := time.Now().Add(duration)
+	releaseAt := clock.Now().Add(duration)
 	if err := transport.Hold(ctx, obj.Key, releaseAt); err != nil {
 		err = fmt.Errorf("cascade-delay mutation: hold failed: %w", err)
 		return types.MutationRecord{Applied: false, Mutation: "cascade-delay", Error: err.Error()}, err
@@ -63,7 +63,7 @@ func (c *CascadeDelayMutation) Apply(ctx context.Context, obj types.DataObject, 
 		Pipeline:    pipeline,
 		Key:         sensorKey,
 		Status:      types.SensorStatusStale,
-		LastUpdated: time.Now(),
+		LastUpdated: clock.Now(),
 	}
 	if err := c.store.WriteSensor(ctx, pipeline, sensorKey, sensor); err != nil {
 		err = fmt.Errorf("cascade-delay mutation: write sensor failed: %w", err)
@@ -75,6 +75,6 @@ func (c *CascadeDelayMutation) Apply(ctx context.Context, obj types.DataObject, 
 		Mutation:  "cascade-delay",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

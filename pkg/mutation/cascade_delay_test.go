@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -86,7 +87,7 @@ func TestCascadeDelayMutation_Apply(t *testing.T) {
 			obj := types.DataObject{Key: "data/records.jsonl"}
 
 			m := mutation.NewCascadeDelayMutation(store)
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -142,7 +143,7 @@ func TestCascadeDelayMutation_SensorPipelineAndKey(t *testing.T) {
 		"upstream_pipeline": "raw-ingest",
 		"delay_duration":    "1h",
 		"sensor_key":        "file-check",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -164,13 +165,13 @@ func TestCascadeDelayMutation_HoldError(t *testing.T) {
 	store := newMockStateStore()
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.holdErr[obj.Key] = errInjected
+	transport.HoldErr[obj.Key] = errInjected
 
 	m := mutation.NewCascadeDelayMutation(store)
 	record, err := m.Apply(context.Background(), obj, transport, map[string]string{
 		"upstream_pipeline": "raw-ingest",
 		"delay_duration":    "1h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -181,7 +182,7 @@ func TestCascadeDelayMutation_HoldError(t *testing.T) {
 
 func TestCascadeDelayMutation_WriteSensorError(t *testing.T) {
 	store := newMockStateStore()
-	store.writeSensorErr = true
+	store.WriteSensorErr = true
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
 
@@ -189,7 +190,7 @@ func TestCascadeDelayMutation_WriteSensorError(t *testing.T) {
 	record, err := m.Apply(context.Background(), obj, transport, map[string]string{
 		"upstream_pipeline": "raw-ingest",
 		"delay_duration":    "1h",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

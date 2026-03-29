@@ -12,11 +12,11 @@ import (
 // StaleSensorMutation modifies a sensor's LastUpdated timestamp to simulate
 // stale sensor data that hasn't been updated recently.
 type StaleSensorMutation struct {
-	store adapter.StateStore
+	store adapter.SensorStore
 }
 
-// NewStaleSensorMutation creates a StaleSensorMutation with the given state store.
-func NewStaleSensorMutation(store adapter.StateStore) *StaleSensorMutation {
+// NewStaleSensorMutation creates a StaleSensorMutation with the given sensor store.
+func NewStaleSensorMutation(store adapter.SensorStore) *StaleSensorMutation {
 	return &StaleSensorMutation{store: store}
 }
 
@@ -28,7 +28,7 @@ func (s *StaleSensorMutation) Type() string { return "stale-sensor" }
 //   - "sensor_key" (required): sensor key identifier.
 //   - "pipeline" (required): pipeline the sensor belongs to.
 //   - "last_update_age" (required): Go duration string for how old the sensor should appear.
-func (s *StaleSensorMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *StaleSensorMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	sensorKey, ok := params["sensor_key"]
 	if !ok || sensorKey == "" {
 		err := fmt.Errorf("stale-sensor mutation: missing required param \"sensor_key\"")
@@ -61,7 +61,7 @@ func (s *StaleSensorMutation) Apply(ctx context.Context, obj types.DataObject, _
 	}
 
 	// Set LastUpdated back by the requested age.
-	sensor.LastUpdated = time.Now().Add(-age)
+	sensor.LastUpdated = clock.Now().Add(-age)
 
 	if err := s.store.WriteSensor(ctx, pipeline, sensorKey, sensor); err != nil {
 		err = fmt.Errorf("stale-sensor mutation: write sensor failed: %w", err)
@@ -73,6 +73,6 @@ func (s *StaleSensorMutation) Apply(ctx context.Context, obj types.DataObject, _
 		Mutation:  "stale-sensor",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

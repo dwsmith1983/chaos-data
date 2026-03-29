@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -148,7 +149,7 @@ func TestSensorFlappingMutation_Apply(t *testing.T) {
 			s := mutation.NewSensorFlappingMutation(store)
 			obj := types.DataObject{Key: "test/data.csv"}
 
-			record, err := s.Apply(context.Background(), obj, transport, tt.params)
+			record, err := s.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -198,7 +199,7 @@ func TestSensorFlappingMutation_Apply(t *testing.T) {
 
 func TestSensorFlappingMutation_WriteSensorError(t *testing.T) {
 	store := newMockStateStore()
-	store.writeSensorErr = true
+	store.WriteSensorErr = true
 	transport := newMockTransport()
 	s := mutation.NewSensorFlappingMutation(store)
 	obj := types.DataObject{Key: "test/data.csv"}
@@ -207,7 +208,7 @@ func TestSensorFlappingMutation_WriteSensorError(t *testing.T) {
 		"sensor_key": "sensor-1",
 		"pipeline":   "etl-daily",
 		"flap_count": "2",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

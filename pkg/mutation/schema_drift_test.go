@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -23,12 +24,12 @@ func TestSchemaDriftMutation_AddColumns(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.readData[obj.Key] = inputData
+	transport.ReadData[obj.Key] = inputData
 
 	s := &mutation.SchemaDriftMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"add_columns": "email,phone",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,12 +89,12 @@ func TestSchemaDriftMutation_RemoveColumns(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.readData[obj.Key] = inputData
+	transport.ReadData[obj.Key] = inputData
 
 	s := &mutation.SchemaDriftMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"remove_columns": "email",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,12 +137,12 @@ func TestSchemaDriftMutation_ChangeTypes(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.readData[obj.Key] = inputData
+	transport.ReadData[obj.Key] = inputData
 
 	s := &mutation.SchemaDriftMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"change_types": "id:string,active:string",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +203,7 @@ func TestSchemaDriftMutation_ReadError(t *testing.T) {
 	s := &mutation.SchemaDriftMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"add_columns": "extra",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -218,10 +219,10 @@ func TestSchemaDriftMutation_NoParams(t *testing.T) {
 
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.readData[obj.Key] = inputData
+	transport.ReadData[obj.Key] = inputData
 
 	s := &mutation.SchemaDriftMutation{}
-	record, err := s.Apply(context.Background(), obj, transport, map[string]string{})
+	record, err := s.Apply(context.Background(), obj, transport, map[string]string{}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

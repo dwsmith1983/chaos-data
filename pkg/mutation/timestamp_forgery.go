@@ -12,11 +12,11 @@ import (
 // TimestampForgeryMutation injects sensors where DynamoDB LastUpdated disagrees
 // with an embedded payload timestamp, testing clock-skew validation.
 type TimestampForgeryMutation struct {
-	store adapter.StateStore
+	store adapter.SensorStore
 }
 
-// NewTimestampForgeryMutation creates a TimestampForgeryMutation with the given state store.
-func NewTimestampForgeryMutation(store adapter.StateStore) *TimestampForgeryMutation {
+// NewTimestampForgeryMutation creates a TimestampForgeryMutation with the given sensor store.
+func NewTimestampForgeryMutation(store adapter.SensorStore) *TimestampForgeryMutation {
 	return &TimestampForgeryMutation{store: store}
 }
 
@@ -35,7 +35,7 @@ func (m *TimestampForgeryMutation) Type() string { return "timestamp-forgery" }
 //   - "offset" (optional): Go duration string; computes time.Now().Add(offset) for the "field" value.
 //
 // At least one of last_updated_offset, payload_timestamp_offset, or field+offset must be present.
-func (m *TimestampForgeryMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (m *TimestampForgeryMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pipeline, ok := params["pipeline"]
 	if !ok || pipeline == "" {
 		err := fmt.Errorf("timestamp-forgery mutation: missing required param \"pipeline\"")
@@ -105,12 +105,12 @@ func (m *TimestampForgeryMutation) Apply(ctx context.Context, obj types.DataObje
 			Pipeline:    pipeline,
 			Key:         sensorKey,
 			Status:      "ready",
-			LastUpdated: time.Now(),
+			LastUpdated: clock.Now(),
 		}
 	}
 
 	if lastUpdatedOffsetStr != "" {
-		sensor.LastUpdated = time.Now().Add(lastUpdatedOffset)
+		sensor.LastUpdated = clock.Now().Add(lastUpdatedOffset)
 	}
 
 	// Build a new metadata map when any metadata writes are needed,
@@ -122,10 +122,10 @@ func (m *TimestampForgeryMutation) Apply(ctx context.Context, obj types.DataObje
 			newMeta[k] = v
 		}
 		if payloadTimestampOffsetStr != "" {
-			newMeta["payload_timestamp"] = time.Now().Add(payloadTimestampOffset).Format(time.RFC3339Nano)
+			newMeta["payload_timestamp"] = clock.Now().Add(payloadTimestampOffset).Format(time.RFC3339Nano)
 		}
 		if fieldName != "" && offsetStr != "" {
-			newMeta[fieldName] = time.Now().Add(fieldOffset).Format(time.RFC3339Nano)
+			newMeta[fieldName] = clock.Now().Add(fieldOffset).Format(time.RFC3339Nano)
 		}
 		sensor.Metadata = newMeta
 	}
@@ -140,6 +140,6 @@ func (m *TimestampForgeryMutation) Apply(ctx context.Context, obj types.DataObje
 		Mutation:  "timestamp-forgery",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

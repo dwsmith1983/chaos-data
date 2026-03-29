@@ -2,7 +2,6 @@ package mutation
 
 import (
 	"context"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -17,7 +16,7 @@ func (d *DropMutation) Type() string { return "drop" }
 
 // Apply records a drop mutation without calling any transport methods.
 // Params: "scope" (optional: "object" or "partition", default "object").
-func (d *DropMutation) Apply(_ context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (d *DropMutation) Apply(_ context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	scope := "object"
 	if s, ok := params["scope"]; ok && s != "" {
 		scope = s
@@ -35,6 +34,6 @@ func (d *DropMutation) Apply(_ context.Context, obj types.DataObject, _ adapter.
 		Mutation:  "drop",
 		Params:    recordParams,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

@@ -24,8 +24,9 @@ type Mutation interface {
 
 	// Apply executes the mutation against the given object using the provided transport.
 	// params contains scenario-specific configuration for this mutation instance.
+	// clock provides the time source for deterministic testing.
 	// Returns a MutationRecord describing what was done.
-	Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error)
+	Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error)
 }
 
 // Registry holds registered mutation implementations.

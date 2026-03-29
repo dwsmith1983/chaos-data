@@ -76,8 +76,14 @@ type AirflowAdapterConfig struct {
 	Password string            `yaml:"password"`
 }
 
+// maxConfigSize is the maximum allowed size for config data (1 MB).
+const maxConfigSize = 1 << 20
+
 // LoadFromBytes parses raw YAML bytes into a Config.
 func LoadFromBytes(data []byte) (Config, error) {
+	if len(data) > maxConfigSize {
+		return Config{}, fmt.Errorf("config: data size %d exceeds maximum %d bytes", len(data), maxConfigSize)
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("config: parse: %w", err)
@@ -90,6 +96,9 @@ func Load(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("config: read %s: %w", path, err)
+	}
+	if len(data) > maxConfigSize {
+		return Config{}, fmt.Errorf("config: file %s size %d exceeds maximum %d bytes", path, len(data), maxConfigSize)
 	}
 	return LoadFromBytes(data)
 }

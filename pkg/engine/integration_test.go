@@ -101,7 +101,7 @@ func TestIntegration_EngineRunWithLocalTransport(t *testing.T) {
 	}
 
 	// 10. Verify: events emitted.
-	events := emitter.getEvents()
+	events := emitter.GetEvents()
 	if len(events) != 2 {
 		t.Fatalf("expected 2 events, got %d", len(events))
 	}

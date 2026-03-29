@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/adapters/interlock"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -36,7 +37,7 @@ func TestInterlockSensorFlapping_Apply_EnrichesPipeline(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -70,7 +71,7 @@ func TestInterlockSensorFlapping_Apply_NoPrefixWhenEmpty(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -103,7 +104,7 @@ func TestInterlockSensorFlapping_Apply_RecordMutationName(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}

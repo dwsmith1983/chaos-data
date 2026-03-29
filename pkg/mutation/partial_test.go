@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -92,10 +93,10 @@ func TestPartialMutation_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := newMockTransport()
 			obj := types.DataObject{Key: "data/records.jsonl"}
-			transport.readData[obj.Key] = inputData
+			transport.ReadData[obj.Key] = inputData
 
 			p := &mutation.PartialMutation{}
-			record, err := p.Apply(context.Background(), obj, transport, tt.params)
+			record, err := p.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -140,7 +141,7 @@ func TestPartialMutation_ReadError(t *testing.T) {
 	p := &mutation.PartialMutation{}
 	record, err := p.Apply(context.Background(), obj, transport, map[string]string{
 		"delivery_pct": "50",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/dwsmith1983/chaos-data/internal/testutil"
 	"github.com/dwsmith1983/chaos-data/pkg/safety"
 )
 
@@ -12,31 +13,31 @@ func TestCheckSLAWindow(t *testing.T) {
 	tests := []struct {
 		name       string
 		pipeline   string
-		controller *mockSafetyController
+		controller *testutil.MockSafety
 		wantErr    bool
 	}{
 		{
 			name:     "outside window (controller returns true) passes",
 			pipeline: "etl-daily",
-			controller: &mockSafetyController{
-				slaWindowSafe: true,
+			controller: &testutil.MockSafety{
+				SLAAllowed: true,
 			},
 			wantErr: false,
 		},
 		{
 			name:     "inside window (controller returns false) fails",
 			pipeline: "etl-daily",
-			controller: &mockSafetyController{
-				slaWindowSafe: false,
+			controller: &testutil.MockSafety{
+				SLAAllowed: false,
 			},
 			wantErr: true,
 		},
 		{
 			name:     "controller error returns error (fail-safe)",
 			pipeline: "etl-daily",
-			controller: &mockSafetyController{
-				slaWindowSafe: false,
-				slaWindowErr:  errors.New("timeout"),
+			controller: &testutil.MockSafety{
+				SLAAllowed: false,
+				SLAErr:     errors.New("timeout"),
 			},
 			wantErr: true,
 		},

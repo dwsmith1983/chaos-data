@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -25,7 +24,7 @@ func (s *SchemaDriftMutation) Type() string { return "schema-drift" }
 //   - "remove_columns" (optional): comma-separated column names to remove.
 //   - "change_types" (optional): comma-separated "col:newtype" pairs.
 //     Currently only "col:string" is supported, converting any value to its string representation.
-func (s *SchemaDriftMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *SchemaDriftMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	reader, err := transport.Read(ctx, obj.Key)
 	if err != nil {
 		err = fmt.Errorf("schema-drift mutation: read failed: %w", err)
@@ -111,7 +110,7 @@ func (s *SchemaDriftMutation) Apply(ctx context.Context, obj types.DataObject, t
 		Mutation:  "schema-drift",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }
 

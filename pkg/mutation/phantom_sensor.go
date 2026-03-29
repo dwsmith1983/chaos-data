@@ -3,7 +3,6 @@ package mutation
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -12,11 +11,11 @@ import (
 // PhantomSensorMutation writes a sensor record for a pipeline that doesn't
 // actually have data, simulating a phantom or ghost sensor entry.
 type PhantomSensorMutation struct {
-	store adapter.StateStore
+	store adapter.SensorStore
 }
 
-// NewPhantomSensorMutation creates a PhantomSensorMutation with the given state store.
-func NewPhantomSensorMutation(store adapter.StateStore) *PhantomSensorMutation {
+// NewPhantomSensorMutation creates a PhantomSensorMutation with the given sensor store.
+func NewPhantomSensorMutation(store adapter.SensorStore) *PhantomSensorMutation {
 	return &PhantomSensorMutation{store: store}
 }
 
@@ -28,7 +27,7 @@ func (p *PhantomSensorMutation) Type() string { return "phantom-sensor" }
 //   - "pipeline" (required): pipeline the sensor belongs to.
 //   - "sensor_key" (required): sensor key identifier.
 //   - "status" (optional, default "ready"): sensor status to write.
-func (p *PhantomSensorMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (p *PhantomSensorMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pipeline, ok := params["pipeline"]
 	if !ok || pipeline == "" {
 		err := fmt.Errorf("phantom-sensor mutation: missing required param \"pipeline\"")
@@ -65,7 +64,7 @@ func (p *PhantomSensorMutation) Apply(ctx context.Context, obj types.DataObject,
 		Pipeline:    pipeline,
 		Key:         sensorKey,
 		Status:      status,
-		LastUpdated: time.Now(),
+		LastUpdated: clock.Now(),
 		Metadata:    metadata,
 	}
 
@@ -79,6 +78,6 @@ func (p *PhantomSensorMutation) Apply(ctx context.Context, obj types.DataObject,
 		Mutation:  "phantom-sensor",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

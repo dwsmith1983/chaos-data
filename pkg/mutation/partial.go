@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -22,7 +21,7 @@ func (p *PartialMutation) Type() string { return "partial" }
 // Apply reads the object and writes only a percentage of its bytes.
 // Params:
 //   - "delivery_pct" (required): percentage of bytes to deliver (0-100).
-func (p *PartialMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (p *PartialMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pctStr, ok := params["delivery_pct"]
 	if !ok || pctStr == "" {
 		err := fmt.Errorf("partial mutation: missing required param \"delivery_pct\"")
@@ -65,6 +64,6 @@ func (p *PartialMutation) Apply(ctx context.Context, obj types.DataObject, trans
 		Mutation:  "partial",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

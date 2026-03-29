@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -74,10 +75,10 @@ func TestSlowWriteMutation_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := newMockTransport()
 			obj := types.DataObject{Key: "data/records.jsonl"}
-			transport.readData[obj.Key] = inputData
+			transport.ReadData[obj.Key] = inputData
 
 			s := &mutation.SlowWriteMutation{}
-			record, err := s.Apply(context.Background(), obj, transport, tt.params)
+			record, err := s.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -130,7 +131,7 @@ func TestSlowWriteMutation_ReadError(t *testing.T) {
 	s := &mutation.SlowWriteMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"latency": "1ms",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -143,13 +144,13 @@ func TestSlowWriteMutation_ZeroJitter(t *testing.T) {
 	inputData := []byte(`{"id":1}` + "\n")
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.readData[obj.Key] = inputData
+	transport.ReadData[obj.Key] = inputData
 
 	s := &mutation.SlowWriteMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"latency": "1ms",
 		"jitter":  "0s",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

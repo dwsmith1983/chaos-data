@@ -26,7 +26,7 @@ func TestInterlockTimestampForgery_Apply_EnrichesPipeline(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["prod/my-pipeline/clock-sensor"] = adapter.SensorData{
+	store.Sensors["prod/my-pipeline/clock-sensor"] = adapter.SensorData{
 		Pipeline:    "prod/my-pipeline",
 		Key:         "clock-sensor",
 		Status:      types.SensorStatusReady,
@@ -45,7 +45,7 @@ func TestInterlockTimestampForgery_Apply_EnrichesPipeline(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -67,7 +67,7 @@ func TestInterlockTimestampForgery_Apply_NoPrefixWhenEmpty(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["my-pipeline/clock-sensor"] = adapter.SensorData{
+	store.Sensors["my-pipeline/clock-sensor"] = adapter.SensorData{
 		Pipeline:    "my-pipeline",
 		Key:         "clock-sensor",
 		Status:      types.SensorStatusReady,
@@ -86,7 +86,7 @@ func TestInterlockTimestampForgery_Apply_NoPrefixWhenEmpty(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -107,7 +107,7 @@ func TestInterlockTimestampForgery_Apply_RecordMutationName(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["prod/pipe/ts-sensor"] = adapter.SensorData{
+	store.Sensors["prod/pipe/ts-sensor"] = adapter.SensorData{
 		Pipeline:    "prod/pipe",
 		Key:         "ts-sensor",
 		Status:      types.SensorStatusReady,
@@ -126,7 +126,7 @@ func TestInterlockTimestampForgery_Apply_RecordMutationName(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}

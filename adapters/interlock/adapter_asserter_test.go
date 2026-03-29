@@ -46,7 +46,7 @@ func TestAdapterAsserter_Supports(t *testing.T) {
 func TestAdapterAsserter_SensorState_IsStale(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.sensors["pipeline-a/upstream"] = adapter.SensorData{
+	store.Sensors["pipeline-a/upstream"] = adapter.SensorData{
 		Pipeline: "pipeline-a",
 		Key:      "upstream",
 		Status:   types.SensorStatusStale,
@@ -68,7 +68,7 @@ func TestAdapterAsserter_SensorState_IsStale(t *testing.T) {
 func TestAdapterAsserter_SensorState_IsStale_NotStale(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.sensors["pipeline-a/upstream"] = adapter.SensorData{
+	store.Sensors["pipeline-a/upstream"] = adapter.SensorData{
 		Pipeline: "pipeline-a",
 		Key:      "upstream",
 		Status:   types.SensorStatusReady,
@@ -90,7 +90,7 @@ func TestAdapterAsserter_SensorState_IsStale_NotStale(t *testing.T) {
 func TestAdapterAsserter_SensorState_Exists(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.sensors["pipeline-a/upstream"] = adapter.SensorData{
+	store.Sensors["pipeline-a/upstream"] = adapter.SensorData{
 		Pipeline: "pipeline-a",
 		Key:      "upstream",
 		Status:   types.SensorStatusReady,
@@ -112,7 +112,7 @@ func TestAdapterAsserter_SensorState_Exists(t *testing.T) {
 func TestAdapterAsserter_SensorState_ReadError(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.readSensorErr = true
+	store.ReadSensorErr = true
 	reader := newMockEventReader()
 	aa := interlock.NewAdapterAsserter(store, reader)
 
@@ -127,7 +127,7 @@ func TestAdapterAsserter_SensorState_ReadError(t *testing.T) {
 func TestAdapterAsserter_TriggerState_Failed(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.triggers["pipeline-a/hourly/2024-01-15"] = "failed"
+	store.Triggers["pipeline-a/hourly/2024-01-15"] = "failed"
 	reader := newMockEventReader()
 	aa := interlock.NewAdapterAsserter(store, reader)
 
@@ -145,7 +145,7 @@ func TestAdapterAsserter_TriggerState_Failed(t *testing.T) {
 func TestAdapterAsserter_TriggerState_WasTriggered(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.triggers["pipeline-a/hourly/2024-01-15"] = "triggered"
+	store.Triggers["pipeline-a/hourly/2024-01-15"] = "triggered"
 	reader := newMockEventReader()
 	aa := interlock.NewAdapterAsserter(store, reader)
 
@@ -218,7 +218,7 @@ func TestAdapterAsserter_EventEmitted_NotFound(t *testing.T) {
 func TestAdapterAsserter_TriggerState_Success(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.triggers["pipeline-a/hourly/2024-01-15"] = "succeeded"
+	store.Triggers["pipeline-a/hourly/2024-01-15"] = "succeeded"
 	reader := newMockEventReader()
 	aa := interlock.NewAdapterAsserter(store, reader)
 
@@ -236,7 +236,7 @@ func TestAdapterAsserter_TriggerState_Success(t *testing.T) {
 func TestAdapterAsserter_TriggerState_Killed(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.triggers["pipeline-a/hourly/2024-01-15"] = "killed"
+	store.Triggers["pipeline-a/hourly/2024-01-15"] = "killed"
 	reader := newMockEventReader()
 	aa := interlock.NewAdapterAsserter(store, reader)
 
@@ -254,7 +254,7 @@ func TestAdapterAsserter_TriggerState_Killed(t *testing.T) {
 func TestAdapterAsserter_TriggerState_Timeout(t *testing.T) {
 	t.Parallel()
 	store := newMockStateStore()
-	store.triggers["pipeline-a/hourly/2024-01-15"] = "timeout"
+	store.Triggers["pipeline-a/hourly/2024-01-15"] = "timeout"
 	reader := newMockEventReader()
 	aa := interlock.NewAdapterAsserter(store, reader)
 

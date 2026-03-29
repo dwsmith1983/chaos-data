@@ -3,7 +3,6 @@ package mutation
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -12,11 +11,11 @@ import (
 // TriggerTimeoutMutation writes a "timeout" status for a pipeline trigger,
 // simulating a trigger that timed out waiting for data.
 type TriggerTimeoutMutation struct {
-	store adapter.StateStore
+	store adapter.TriggerStore
 }
 
-// NewTriggerTimeoutMutation creates a TriggerTimeoutMutation with the given state store.
-func NewTriggerTimeoutMutation(store adapter.StateStore) *TriggerTimeoutMutation {
+// NewTriggerTimeoutMutation creates a TriggerTimeoutMutation with the given trigger store.
+func NewTriggerTimeoutMutation(store adapter.TriggerStore) *TriggerTimeoutMutation {
 	return &TriggerTimeoutMutation{store: store}
 }
 
@@ -29,7 +28,7 @@ func (t *TriggerTimeoutMutation) Type() string { return "trigger-timeout" }
 //   - "schedule" (required): schedule name.
 //   - "date" (required): date string.
 //   - "timeout_duration" (optional, default "30m"): duration before timeout.
-func (t *TriggerTimeoutMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (t *TriggerTimeoutMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pipeline, ok := params["pipeline"]
 	if !ok || pipeline == "" {
 		err := fmt.Errorf("trigger-timeout mutation: missing required param \"pipeline\"")
@@ -71,6 +70,6 @@ func (t *TriggerTimeoutMutation) Apply(ctx context.Context, obj types.DataObject
 		Mutation:  "trigger-timeout",
 		Params:    recordParams,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

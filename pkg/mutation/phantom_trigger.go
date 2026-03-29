@@ -3,7 +3,6 @@ package mutation
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -12,11 +11,11 @@ import (
 // PhantomTriggerMutation writes a "triggered" status for a pipeline trigger
 // that should not exist, simulating a phantom/spurious trigger event.
 type PhantomTriggerMutation struct {
-	store adapter.StateStore
+	store adapter.TriggerStore
 }
 
-// NewPhantomTriggerMutation creates a PhantomTriggerMutation with the given state store.
-func NewPhantomTriggerMutation(store adapter.StateStore) *PhantomTriggerMutation {
+// NewPhantomTriggerMutation creates a PhantomTriggerMutation with the given trigger store.
+func NewPhantomTriggerMutation(store adapter.TriggerStore) *PhantomTriggerMutation {
 	return &PhantomTriggerMutation{store: store}
 }
 
@@ -29,7 +28,7 @@ func (p *PhantomTriggerMutation) Type() string { return "phantom-trigger" }
 //   - "schedule" (required): schedule name.
 //   - "date" (required): date string.
 //   - "trigger_type" (optional, default "scheduled"): type of trigger.
-func (p *PhantomTriggerMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (p *PhantomTriggerMutation) Apply(ctx context.Context, obj types.DataObject, _ adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	pipeline, ok := params["pipeline"]
 	if !ok || pipeline == "" {
 		err := fmt.Errorf("phantom-trigger mutation: missing required param \"pipeline\"")
@@ -71,6 +70,6 @@ func (p *PhantomTriggerMutation) Apply(ctx context.Context, obj types.DataObject
 		Mutation:  "phantom-trigger",
 		Params:    recordParams,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

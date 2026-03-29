@@ -34,13 +34,21 @@ type TriggerKey struct {
 	Date     string `json:"date"`
 }
 
-// StateStore reads/writes control plane state.
-type StateStore interface {
+// SensorStore manages pipeline sensor state.
+type SensorStore interface {
 	ReadSensor(ctx context.Context, pipeline, key string) (SensorData, error)
 	WriteSensor(ctx context.Context, pipeline, key string, data SensorData) error
 	DeleteSensor(ctx context.Context, pipeline, key string) error
+}
+
+// TriggerStore manages trigger status.
+type TriggerStore interface {
 	ReadTriggerStatus(ctx context.Context, key TriggerKey) (string, error)
 	WriteTriggerStatus(ctx context.Context, key TriggerKey, status string) error
+}
+
+// EventStore manages chaos events.
+type EventStore interface {
 	WriteEvent(ctx context.Context, event types.ChaosEvent) error
 	ReadChaosEvents(ctx context.Context, experimentID string) ([]types.ChaosEvent, error)
 	WritePipelineConfig(ctx context.Context, pipeline string, config []byte) error
@@ -49,4 +57,11 @@ type StateStore interface {
 	CountReruns(ctx context.Context, pipeline, schedule, date string) (int, error)
 	WriteRerun(ctx context.Context, pipeline, schedule, date, reason string) error
 	ReadJobEvents(ctx context.Context, pipeline, schedule, date string) ([]JobEvent, error)
+}
+
+// StateStore composes all state sub-interfaces for full state access.
+type StateStore interface {
+	SensorStore
+	TriggerStore
+	EventStore
 }

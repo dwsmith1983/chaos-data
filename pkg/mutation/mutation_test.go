@@ -20,7 +20,7 @@ type stubMutation struct {
 
 func (s *stubMutation) Type() string { return s.name }
 
-func (s *stubMutation) Apply(_ context.Context, _ types.DataObject, _ adapter.DataTransport, _ map[string]string) (types.MutationRecord, error) {
+func (s *stubMutation) Apply(_ context.Context, _ types.DataObject, _ adapter.DataTransport, _ map[string]string, _ adapter.Clock) (types.MutationRecord, error) {
 	return types.MutationRecord{Applied: true, Mutation: s.name}, nil
 }
 

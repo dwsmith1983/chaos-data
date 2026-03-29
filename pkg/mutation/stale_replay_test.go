@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -56,10 +57,10 @@ func TestStaleReplayMutation_Apply(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			transport := newMockTransport()
 			obj := types.DataObject{Key: "data/records.jsonl"}
-			transport.readData[obj.Key] = inputData
+			transport.ReadData[obj.Key] = inputData
 
 			s := &mutation.StaleReplayMutation{}
-			record, err := s.Apply(context.Background(), obj, transport, tt.params)
+			record, err := s.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -111,7 +112,7 @@ func TestStaleReplayMutation_ReadError(t *testing.T) {
 	s := &mutation.StaleReplayMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"replay_date": "2024-01-15",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

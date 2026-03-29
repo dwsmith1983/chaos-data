@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -70,7 +71,7 @@ func TestStreamingLagMutation_Apply(t *testing.T) {
 
 			s := &mutation.StreamingLagMutation{}
 			before := time.Now()
-			record, err := s.Apply(context.Background(), obj, transport, tt.params)
+			record, err := s.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 			after := time.Now()
 
 			if tt.wantErr {
@@ -132,12 +133,12 @@ func TestStreamingLagMutation_Apply(t *testing.T) {
 func TestStreamingLagMutation_HoldError(t *testing.T) {
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "data/records.jsonl"}
-	transport.holdErr[obj.Key] = errInjected
+	transport.HoldErr[obj.Key] = errInjected
 
 	s := &mutation.StreamingLagMutation{}
 	record, err := s.Apply(context.Background(), obj, transport, map[string]string{
 		"lag_duration": "5s",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

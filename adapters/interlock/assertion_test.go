@@ -15,7 +15,7 @@ func TestAssertSensorStatus_SucceedsImmediately(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["pipeline-a/sensor-1"] = adapter.SensorData{
+	store.Sensors["pipeline-a/sensor-1"] = adapter.SensorData{
 		Pipeline: "pipeline-a",
 		Key:      "sensor-1",
 		Status:   types.SensorStatusReady,
@@ -38,7 +38,7 @@ func TestAssertSensorStatus_SucceedsAfterRetry(t *testing.T) {
 
 	store := newMockStateStore()
 	// First put the wrong status.
-	store.sensors["pipeline-a/sensor-1"] = adapter.SensorData{
+	store.Sensors["pipeline-a/sensor-1"] = adapter.SensorData{
 		Pipeline: "pipeline-a",
 		Key:      "sensor-1",
 		Status:   types.SensorStatusPending,
@@ -50,13 +50,11 @@ func TestAssertSensorStatus_SucceedsAfterRetry(t *testing.T) {
 	// Update the store status after a short delay.
 	go func() {
 		time.Sleep(30 * time.Millisecond)
-		store.mu.Lock()
-		store.sensors["pipeline-a/sensor-1"] = adapter.SensorData{
+		store.SetSensor("pipeline-a", "sensor-1", adapter.SensorData{
 			Pipeline: "pipeline-a",
 			Key:      "sensor-1",
 			Status:   types.SensorStatusReady,
-		}
-		store.mu.Unlock()
+		})
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -72,7 +70,7 @@ func TestAssertSensorStatus_TimesOut(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["pipeline-a/sensor-1"] = adapter.SensorData{
+	store.Sensors["pipeline-a/sensor-1"] = adapter.SensorData{
 		Pipeline: "pipeline-a",
 		Key:      "sensor-1",
 		Status:   types.SensorStatusPending,
@@ -98,7 +96,7 @@ func TestAssertTriggerStatus_Succeeds(t *testing.T) {
 
 	store := newMockStateStore()
 	tKey := adapter.TriggerKey{Pipeline: "p", Schedule: "s", Date: "2026-03-14"}
-	store.triggers["p/s/2026-03-14"] = "triggered"
+	store.Triggers["p/s/2026-03-14"] = "triggered"
 
 	reader := newMockEventReader()
 	a := interlock.NewAsserter(store, reader, 10*time.Millisecond)
@@ -117,7 +115,7 @@ func TestAssertTriggerStatus_Fails(t *testing.T) {
 
 	store := newMockStateStore()
 	tKey := adapter.TriggerKey{Pipeline: "p", Schedule: "s", Date: "2026-03-14"}
-	store.triggers["p/s/2026-03-14"] = "pending"
+	store.Triggers["p/s/2026-03-14"] = "pending"
 
 	reader := newMockEventReader()
 	a := interlock.NewAsserter(store, reader, 10*time.Millisecond)
@@ -175,7 +173,7 @@ func TestAssertSensorStatus_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.sensors["pipeline-a/sensor-1"] = adapter.SensorData{
+	store.Sensors["pipeline-a/sensor-1"] = adapter.SensorData{
 		Pipeline: "pipeline-a",
 		Key:      "sensor-1",
 		Status:   types.SensorStatusPending,

@@ -93,7 +93,7 @@ func TestTriggerTimeoutMutation_Apply(t *testing.T) {
 			obj := types.DataObject{Key: "test/data.jsonl"}
 
 			m := mutation.NewTriggerTimeoutMutation(store)
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -144,7 +144,7 @@ func TestTriggerTimeoutMutation_DefaultTimeoutDuration(t *testing.T) {
 		"pipeline": "etl-daily",
 		"schedule": "daily-06",
 		"date":     "2026-03-14",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestTriggerTimeoutMutation_DefaultTimeoutDuration(t *testing.T) {
 
 func TestTriggerTimeoutMutation_WriteTriggerStatusError(t *testing.T) {
 	store := newMockStateStore()
-	store.writeTriggerStatusErr = true
+	store.WriteTriggerStatusErr = true
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "test/data.jsonl"}
 
@@ -165,7 +165,7 @@ func TestTriggerTimeoutMutation_WriteTriggerStatusError(t *testing.T) {
 		"pipeline": "etl-daily",
 		"schedule": "daily-06",
 		"date":     "2026-03-14",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

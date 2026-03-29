@@ -81,6 +81,7 @@ func New(
 	eng := &Engine{
 		config:    config,
 		transport: transport,
+		clock:     adapter.NewWallClock(),
 		mutations: mutations,
 		scenarios: scenarios,
 	}
@@ -132,94 +133,12 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 	var records []types.MutationRecord
 
 	for _, sc := range e.scenarios {
-		// Filter scenarios by target filter.
-		filter := types.ObjectFilter{
-			Prefix: sc.Target.Filter.Prefix,
-			Match:  sc.Target.Filter.Match,
-		}
-		if !filter.Matches(obj) {
-			continue
-		}
-
-		// Check severity against safety controller.
-		if e.safety != nil && sc.Severity.ExceedsThreshold(maxSeverity) {
-			continue
-		}
-
-		// Check cooldown for this scenario.
-		if e.safety != nil {
-			if cdErr := e.safety.CheckCooldown(ctx, sc.Name); cdErr != nil {
-				if errors.Is(cdErr, adapter.ErrCooldownActive) {
-					continue
-				}
-				return records, fmt.Errorf("process object %q: scenario %q: cooldown: %w", obj.Key, sc.Name, cdErr)
-			}
-		}
-
-		// Check SLA window for this scenario — skip if within window.
-		if e.safety != nil {
-			slaOK, slaErr := e.safety.CheckSLAWindow(ctx, sc.Name)
-			if slaErr != nil {
-				return records, fmt.Errorf("process object %q: scenario %q: sla window: %w", obj.Key, sc.Name, slaErr)
-			}
-			if !slaOK {
-				continue // skip scenario — pipeline is within its SLA window
-			}
-		}
-
-		// Get mutation from registry.
-		m, err := e.mutations.Get(sc.Mutation.Type)
+		record, skipped, err := e.processSingleScenario(ctx, obj, sc, maxSeverity)
 		if err != nil {
-			return records, fmt.Errorf("process object %q: scenario %q: %w", obj.Key, sc.Name, err)
+			return records, err
 		}
-
-		// Apply the mutation (or simulate in dry-run mode).
-		var record types.MutationRecord
-		if e.config.DryRun {
-			record = types.MutationRecord{
-				ObjectKey: obj.Key,
-				Scenario:  sc.Name,
-				Mutation:  sc.Mutation.Type,
-				Params:    sc.Mutation.Params,
-				Applied:   false,
-				Error:     "dry-run",
-				Timestamp: e.clock.Now(),
-			}
-		} else {
-			var applyErr error
-			record, applyErr = m.Apply(ctx, obj, e.transport, sc.Mutation.Params)
-			if applyErr != nil {
-				return records, fmt.Errorf("process object %q: scenario %q: apply %q: %w", obj.Key, sc.Name, sc.Mutation.Type, applyErr)
-			}
-			record.Scenario = sc.Name
-		}
-
-		records = append(records, record)
-
-		// Emit a ChaosEvent.
-		if e.emitter != nil {
-			now := e.clock.Now()
-			event := types.ChaosEvent{
-				ID:        fmt.Sprintf("%s-%s-%d", sc.Name, obj.Key, now.UnixNano()),
-				Scenario:  sc.Name,
-				Category:  sc.Category,
-				Severity:  sc.Severity,
-				Target:    obj.Key,
-				Mutation:  sc.Mutation.Type,
-				Params:    sc.Mutation.Params,
-				Timestamp: now,
-				Mode:      e.config.Mode,
-			}
-			if err := e.emitter.Emit(ctx, event); err != nil {
-				return records, fmt.Errorf("process object %q: emit event: %w", obj.Key, err)
-			}
-		}
-
-		// Record injection for cooldown tracking (skip in dry-run).
-		if e.safety != nil && !e.config.DryRun {
-			if riErr := e.safety.RecordInjection(ctx, sc.Name); riErr != nil {
-				return records, fmt.Errorf("process object %q: record injection: %w", obj.Key, riErr)
-			}
+		if !skipped {
+			records = append(records, record)
 		}
 	}
 
@@ -230,6 +149,100 @@ func (e *Engine) ProcessObject(ctx context.Context, obj types.DataObject) ([]typ
 // target constitutes success (e.g. not_exists).
 func isNegativeCondition(c types.Condition) bool {
 	return c == types.CondNotExists
+}
+
+// processSingleScenario runs the chaos pipeline for one scenario against a single object.
+// It returns the MutationRecord (if applied), whether the scenario was skipped, and any error.
+func (e *Engine) processSingleScenario(ctx context.Context, obj types.DataObject, sc scenario.Scenario, maxSeverity types.Severity) (types.MutationRecord, bool, error) {
+	// Filter scenarios by target filter.
+	filter := types.ObjectFilter{
+		Prefix: sc.Target.Filter.Prefix,
+		Match:  sc.Target.Filter.Match,
+	}
+	if !filter.Matches(obj) {
+		return types.MutationRecord{}, true, nil
+	}
+
+	// Check severity against safety controller.
+	if e.safety != nil && sc.Severity.ExceedsThreshold(maxSeverity) {
+		return types.MutationRecord{}, true, nil
+	}
+
+	// Check cooldown for this scenario.
+	if e.safety != nil {
+		if cdErr := e.safety.CheckCooldown(ctx, sc.Name); cdErr != nil {
+			if errors.Is(cdErr, adapter.ErrCooldownActive) {
+				return types.MutationRecord{}, true, nil
+			}
+			return types.MutationRecord{}, false, fmt.Errorf("process object %q: scenario %q: cooldown: %w", obj.Key, sc.Name, cdErr)
+		}
+	}
+
+	// Check SLA window for this scenario — skip if within window.
+	if e.safety != nil {
+		slaOK, slaErr := e.safety.CheckSLAWindow(ctx, sc.Name)
+		if slaErr != nil {
+			return types.MutationRecord{}, false, fmt.Errorf("process object %q: scenario %q: sla window: %w", obj.Key, sc.Name, slaErr)
+		}
+		if !slaOK {
+			return types.MutationRecord{}, true, nil // skip scenario — pipeline is within its SLA window
+		}
+	}
+
+	// Get mutation from registry.
+	m, err := e.mutations.Get(sc.Mutation.Type)
+	if err != nil {
+		return types.MutationRecord{}, false, fmt.Errorf("process object %q: scenario %q: %w", obj.Key, sc.Name, err)
+	}
+
+	// Apply the mutation (or simulate in dry-run mode).
+	var record types.MutationRecord
+	if e.config.DryRun {
+		record = types.MutationRecord{
+			ObjectKey: obj.Key,
+			Scenario:  sc.Name,
+			Mutation:  sc.Mutation.Type,
+			Params:    sc.Mutation.Params,
+			Applied:   false,
+			Error:     "dry-run",
+			Timestamp: e.clock.Now(),
+		}
+	} else {
+		var applyErr error
+		record, applyErr = m.Apply(ctx, obj, e.transport, sc.Mutation.Params, e.clock)
+		if applyErr != nil {
+			return types.MutationRecord{}, false, fmt.Errorf("process object %q: scenario %q: apply %q: %w", obj.Key, sc.Name, sc.Mutation.Type, applyErr)
+		}
+		record.Scenario = sc.Name
+	}
+
+	// Emit a ChaosEvent.
+	if e.emitter != nil {
+		now := e.clock.Now()
+		event := types.ChaosEvent{
+			ID:        fmt.Sprintf("%s-%s-%d", sc.Name, obj.Key, now.UnixNano()),
+			Scenario:  sc.Name,
+			Category:  sc.Category,
+			Severity:  sc.Severity,
+			Target:    obj.Key,
+			Mutation:  sc.Mutation.Type,
+			Params:    sc.Mutation.Params,
+			Timestamp: now,
+			Mode:      e.config.Mode,
+		}
+		if err := e.emitter.Emit(ctx, event); err != nil {
+			return types.MutationRecord{}, false, fmt.Errorf("process object %q: emit event: %w", obj.Key, err)
+		}
+	}
+
+	// Record injection for cooldown tracking (skip in dry-run).
+	if e.safety != nil && !e.config.DryRun {
+		if riErr := e.safety.RecordInjection(ctx, sc.Name); riErr != nil {
+			return types.MutationRecord{}, false, fmt.Errorf("process object %q: record injection: %w", obj.Key, riErr)
+		}
+	}
+
+	return record, false, nil
 }
 
 // EvaluateAssertions polls all assertions from the given scenarios until all are

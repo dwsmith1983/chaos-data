@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -21,7 +20,7 @@ func (e *EmptyMutation) Type() string { return "empty" }
 // Apply replaces the object content with empty data.
 // Params:
 //   - "preserve_header" (optional, default "false"): "true" to keep the first line.
-func (e *EmptyMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (e *EmptyMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	preserveHeader := params["preserve_header"] == "true"
 
 	var writeData []byte
@@ -50,6 +49,6 @@ func (e *EmptyMutation) Apply(ctx context.Context, obj types.DataObject, transpo
 		Mutation:  "empty",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

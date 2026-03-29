@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -25,7 +24,7 @@ func (s *StaleReplayMutation) Type() string { return "stale-replay" }
 //
 // The resulting key is "date=<replay_date>/<original_key>" or
 // "<prefix>/date=<replay_date>/<original_key>" when prefix is set.
-func (s *StaleReplayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *StaleReplayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	replayDate, ok := params["replay_date"]
 	if !ok || replayDate == "" {
 		err := fmt.Errorf("stale-replay mutation: missing required param \"replay_date\"")
@@ -61,6 +60,6 @@ func (s *StaleReplayMutation) Apply(ctx context.Context, obj types.DataObject, t
 		Mutation:  "stale-replay",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

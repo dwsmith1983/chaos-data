@@ -20,7 +20,7 @@ func (d *DelayMutation) Type() string { return "delay" }
 // Optional params: "jitter" (Go duration string), "release" ("true"/"false", default "true").
 // When release is "true", the object is held until the computed time.
 // When release is "false", the object is deleted, simulating data that never arrives.
-func (d *DelayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (d *DelayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	durationStr, ok := params["duration"]
 	if !ok || durationStr == "" {
 		err := fmt.Errorf("delay mutation: missing required param \"duration\"")
@@ -56,11 +56,11 @@ func (d *DelayMutation) Apply(ctx context.Context, obj types.DataObject, transpo
 		Mutation:  "delay",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}
 
 	if release {
-		releaseAt := time.Now().Add(duration + jitter)
+		releaseAt := clock.Now().Add(duration + jitter)
 		if err := transport.Hold(ctx, obj.Key, releaseAt); err != nil {
 			err = fmt.Errorf("delay mutation: hold failed: %w", err)
 			return types.MutationRecord{Applied: false, Mutation: "delay", Error: err.Error()}, err

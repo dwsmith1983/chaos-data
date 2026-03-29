@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -23,7 +22,7 @@ func (d *DuplicateMutation) Type() string { return "duplicate" }
 // Params:
 //   - "dup_pct" (optional, default "100"): percentage of records to duplicate in JSONL.
 //   - "exact" (optional, default "true"): "true" for exact duplicate, "false" for near-duplicate.
-func (d *DuplicateMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (d *DuplicateMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	reader, err := transport.Read(ctx, obj.Key)
 	if err != nil {
 		err = fmt.Errorf("duplicate mutation: read failed: %w", err)
@@ -55,6 +54,6 @@ func (d *DuplicateMutation) Apply(ctx context.Context, obj types.DataObject, tra
 		Mutation:  "duplicate",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

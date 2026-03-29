@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/adapters/interlock"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -35,7 +36,7 @@ func TestInterlockPhantomTrigger_Apply_EnrichesParams(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -73,7 +74,7 @@ func TestInterlockPhantomTrigger_Apply_ExplicitScheduleOverridesDefault(t *testi
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -94,7 +95,7 @@ func TestInterlockPhantomTrigger_Apply_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.writeTriggerStatusErr = true
+	store.WriteTriggerStatusErr = true
 
 	cfg := interlock.Config{PipelinePrefix: "prod/", DefaultSchedule: "daily"}
 	m := interlock.NewInterlockPhantomTrigger(store, cfg)
@@ -108,7 +109,7 @@ func TestInterlockPhantomTrigger_Apply_ErrorPropagation(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("Apply() error = nil, want error")
 	}
@@ -141,7 +142,7 @@ func TestInterlockJobKill_Apply_EnrichesParams(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -165,7 +166,7 @@ func TestInterlockJobKill_Apply_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.writeTriggerStatusErr = true
+	store.WriteTriggerStatusErr = true
 
 	cfg := interlock.Config{PipelinePrefix: "prod/", DefaultSchedule: "daily"}
 	m := interlock.NewInterlockJobKill(store, cfg)
@@ -179,7 +180,7 @@ func TestInterlockJobKill_Apply_ErrorPropagation(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("Apply() error = nil, want error")
 	}
@@ -212,7 +213,7 @@ func TestInterlockTriggerTimeout_Apply_EnrichesParams(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -233,7 +234,7 @@ func TestInterlockTriggerTimeout_Apply_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.writeTriggerStatusErr = true
+	store.WriteTriggerStatusErr = true
 
 	cfg := interlock.Config{PipelinePrefix: "prod/", DefaultSchedule: "daily"}
 	m := interlock.NewInterlockTriggerTimeout(store, cfg)
@@ -247,7 +248,7 @@ func TestInterlockTriggerTimeout_Apply_ErrorPropagation(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("Apply() error = nil, want error")
 	}
@@ -280,7 +281,7 @@ func TestInterlockFalseSuccess_Apply_EnrichesParams(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -301,7 +302,7 @@ func TestInterlockFalseSuccess_Apply_ErrorPropagation(t *testing.T) {
 	t.Parallel()
 
 	store := newMockStateStore()
-	store.writeTriggerStatusErr = true
+	store.WriteTriggerStatusErr = true
 
 	cfg := interlock.Config{PipelinePrefix: "prod/", DefaultSchedule: "daily"}
 	m := interlock.NewInterlockFalseSuccess(store, cfg)
@@ -315,7 +316,7 @@ func TestInterlockFalseSuccess_Apply_ErrorPropagation(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("Apply() error = nil, want error")
 	}
@@ -337,7 +338,7 @@ func TestInterlockPhantomTrigger_Apply_RecordMutationName(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -362,7 +363,7 @@ func TestInterlockJobKill_Apply_RecordMutationName(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -387,7 +388,7 @@ func TestInterlockTriggerTimeout_Apply_RecordMutationName(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -412,7 +413,7 @@ func TestInterlockFalseSuccess_Apply_RecordMutationName(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	rec, err := m.Apply(context.Background(), obj, transport, params)
+	rec, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -437,7 +438,7 @@ func TestInterlockJobKill_Apply_ExplicitScheduleOverridesDefault(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -467,7 +468,7 @@ func TestInterlockTriggerTimeout_Apply_ExplicitScheduleOverridesDefault(t *testi
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -497,7 +498,7 @@ func TestInterlockFalseSuccess_Apply_ExplicitScheduleOverridesDefault(t *testing
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -527,7 +528,7 @@ func TestInterlockPhantomTrigger_Apply_EmptyScheduleUsesDefault(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -557,7 +558,7 @@ func TestInterlockJobKill_Apply_EmptyScheduleUsesDefault(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}
@@ -593,7 +594,7 @@ func TestInterlockTrigger_DelegatesWriteStatus(t *testing.T) {
 	m1 := interlock.NewInterlockPhantomTrigger(store, cfg)
 	rec1, err := m1.Apply(context.Background(), types.DataObject{Key: "k"}, newMockTransport(), map[string]string{
 		"pipeline": "p", "schedule": "s", "date": "d",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("PhantomTrigger Apply error = %v", err)
 	}
@@ -626,7 +627,7 @@ func TestInterlockTrigger_NoPrefixWhenEmpty(t *testing.T) {
 	obj := types.DataObject{Key: "test-obj"}
 	transport := newMockTransport()
 
-	_, err := m.Apply(context.Background(), obj, transport, params)
+	_, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("Apply() error = %v, want nil", err)
 	}

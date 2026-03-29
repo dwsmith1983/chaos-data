@@ -3,8 +3,14 @@ package airflow
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 )
+
+// warnWriter is the destination for non-fatal warnings emitted by Validate.
+// It defaults to os.Stderr and can be overridden in tests.
+var warnWriter io.Writer = os.Stderr
 
 // Config holds the settings for the Airflow adapter.
 type Config struct {
@@ -46,6 +52,10 @@ func (c *Config) Validate() error {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
 		return errors.New("airflow: URL must be a valid http or https URL")
 	}
+	if u.Scheme == "http" {
+		safe := &url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}
+		fmt.Fprintf(warnWriter, "airflow: WARNING: URL %q uses http:// — consider using https:// for production\n", safe.String())
+	}
 	switch c.Version {
 	case "", "v1", "v2":
 	default:
@@ -59,4 +69,30 @@ func (c *Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+// Redacted returns a copy of the Config with sensitive fields masked.
+// Password is replaced with "[REDACTED]" if non-empty, and the
+// Authorization header value is replaced with "[REDACTED]" if present.
+// The original Config is not modified.
+func (c Config) Redacted() Config {
+	out := Config{
+		URL:      c.URL,
+		Version:  c.Version,
+		Username: c.Username,
+		Password: c.Password,
+	}
+	if c.Password != "" {
+		out.Password = "[REDACTED]"
+	}
+	if c.Headers != nil {
+		out.Headers = make(map[string]string, len(c.Headers))
+		for k, v := range c.Headers {
+			out.Headers[k] = v
+		}
+		if _, ok := out.Headers["Authorization"]; ok {
+			out.Headers["Authorization"] = "[REDACTED]"
+		}
+	}
+	return out
 }

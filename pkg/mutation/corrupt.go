@@ -9,7 +9,6 @@ import (
 	"io"
 	"math/rand"
 	"strconv"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -26,7 +25,7 @@ func (c *CorruptMutation) Type() string { return "corrupt" }
 //   - "affected_pct" (optional, default "10"): percentage of records to corrupt (0-100).
 //   - "corruption_type" (optional, default "null"): type of corruption to apply.
 //     Currently supported: "null" (set a random field to nil).
-func (c *CorruptMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (c *CorruptMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	// Read the object data.
 	reader, err := transport.Read(ctx, obj.Key)
 	if err != nil {
@@ -99,7 +98,7 @@ func (c *CorruptMutation) Apply(ctx context.Context, obj types.DataObject, trans
 		Mutation:  "corrupt",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }
 

@@ -8,10 +8,6 @@ type Clock interface {
 	Now() time.Time
 
 	// NewTicker returns a channel that delivers the current time at regular intervals.
-	// We return <-chan time.Time instead of *time.Ticker so it can be easily mocked,
-	// but the caller must handle stopping the ticker out-of-band, or we provide a Ticker interface.
-	// Wait, the standard library ticker has a Stop() method.
-	// Let's define a Ticker interface instead.
 	NewTicker(d time.Duration) Ticker
 
 	// After waits for the duration to elapse and then sends the current time on the returned channel.
@@ -40,6 +36,7 @@ func (s *SystemTicker) Stop() {
 // WallClock implements Clock using the real system clock.
 type WallClock struct{}
 
+// NewWallClock returns a WallClock instance.
 func NewWallClock() *WallClock {
 	return &WallClock{}
 }
@@ -57,7 +54,6 @@ func (c *WallClock) After(d time.Duration) <-chan time.Time {
 }
 
 // TestClock implements Clock for testing, allowing time to be artificially advanced.
-// It is thread-safe.
 type TestClock struct {
 	now time.Time
 }
@@ -75,17 +71,12 @@ func (c *TestClock) Advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// NewTicker is a stub for TestClock. 
-// For pure testing with instantaneous evaluation, TestClock might just
-// return an immediately firing ticker, but true ticker mocking requires a bit more logic.
-// For our use case (evaluating assertions instantly), returning a closed channel could simulate an infinite fast loop,
-// but it's simpler to just return a channel we send on when Advance is called, or just a fast ticker.
 func (c *TestClock) NewTicker(d time.Duration) Ticker {
 	t := &TestTicker{
 		c:    make(chan time.Time, 1),
 		stop: make(chan struct{}),
 	}
-	// Instantly tick once for immediate evaluation in loops
+	// Instantly tick once for immediate evaluation in loops.
 	t.c <- c.now
 	return t
 }

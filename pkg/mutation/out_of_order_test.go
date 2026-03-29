@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -164,7 +165,7 @@ func TestOutOfOrderMutation_Apply(t *testing.T) {
 				"newer_value":     "15",
 			},
 			setupTransport: func(t *mockTransport, key string) {
-				t.holdErr[key] = fmt.Errorf("storage unavailable")
+				t.HoldErr[key] = fmt.Errorf("storage unavailable")
 			},
 			wantApplied: false,
 			wantErr:     true,
@@ -183,7 +184,7 @@ func TestOutOfOrderMutation_Apply(t *testing.T) {
 			obj := types.DataObject{Key: tt.objKey}
 
 			before := time.Now()
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 			after := time.Now()
 
 			if tt.wantErr {

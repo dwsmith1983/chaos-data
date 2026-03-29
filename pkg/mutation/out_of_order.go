@@ -27,7 +27,7 @@ func (o *OutOfOrderMutation) Type() string { return "out-of-order" }
 // If obj.Key contains "partition_field=older_value", transport.Hold is called and
 // Applied=true is returned. Otherwise, Applied=false is returned with no error —
 // the newer partition passes through normally.
-func (o *OutOfOrderMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (o *OutOfOrderMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	delayStr, ok := params["delay_older_by"]
 	if !ok || delayStr == "" {
 		err := fmt.Errorf("out-of-order mutation: missing required param \"delay_older_by\"")
@@ -73,11 +73,11 @@ func (o *OutOfOrderMutation) Apply(ctx context.Context, obj types.DataObject, tr
 			Mutation:  "out-of-order",
 			Params:    params,
 			Applied:   false,
-			Timestamp: time.Now(),
+			Timestamp: clock.Now(),
 		}, nil
 	}
 
-	releaseAt := time.Now().Add(duration)
+	releaseAt := clock.Now().Add(duration)
 	if err := transport.Hold(ctx, obj.Key, releaseAt); err != nil {
 		err = fmt.Errorf("out-of-order mutation: hold failed: %w", err)
 		return types.MutationRecord{Applied: false, Mutation: "out-of-order", Error: err.Error()}, err
@@ -88,7 +88,7 @@ func (o *OutOfOrderMutation) Apply(ctx context.Context, obj types.DataObject, tr
 		Mutation:  "out-of-order",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }
 

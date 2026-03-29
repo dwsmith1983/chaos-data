@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -48,7 +49,7 @@ func TestDropMutation_Apply(t *testing.T) {
 			d := &mutation.DropMutation{}
 			obj := types.DataObject{Key: "test/data.csv"}
 
-			record, err := d.Apply(context.Background(), obj, transport, tt.params)
+			record, err := d.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -84,7 +85,7 @@ func TestDropMutation_EmptyScopeRecordsObject(t *testing.T) {
 	// Pass scope as empty string -- should resolve to "object".
 	record, err := d.Apply(context.Background(), obj, transport, map[string]string{
 		"scope": "",
-	})
+	}, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

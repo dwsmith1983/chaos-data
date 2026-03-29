@@ -6,21 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dwsmith1983/chaos-data/internal/testutil"
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
-
-// mockEmitter is a test double that records Emit calls and returns
-// a pre-configured error.
-type mockEmitter struct {
-	emittedEvents []types.ChaosEvent
-	emitErr       error
-}
-
-func (m *mockEmitter) Emit(_ context.Context, event types.ChaosEvent) error {
-	m.emittedEvents = append(m.emittedEvents, event)
-	return m.emitErr
-}
 
 func sampleEvent() types.ChaosEvent {
 	return types.ChaosEvent{
@@ -33,9 +22,9 @@ func sampleEvent() types.ChaosEvent {
 }
 
 func TestCompositeEmitter_EmitFansOutToAllEmitters(t *testing.T) {
-	em1 := &mockEmitter{}
-	em2 := &mockEmitter{}
-	em3 := &mockEmitter{}
+	em1 := &testutil.MockEmitter{}
+	em2 := &testutil.MockEmitter{}
+	em3 := &testutil.MockEmitter{}
 
 	composite := adapter.NewCompositeEmitter(em1, em2, em3)
 	event := sampleEvent()
@@ -45,12 +34,13 @@ func TestCompositeEmitter_EmitFansOutToAllEmitters(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	for i, em := range []*mockEmitter{em1, em2, em3} {
-		if len(em.emittedEvents) != 1 {
-			t.Errorf("emitter %d: expected 1 event, got %d", i, len(em.emittedEvents))
+	for i, em := range []*testutil.MockEmitter{em1, em2, em3} {
+		events := em.GetEvents()
+		if len(events) != 1 {
+			t.Errorf("emitter %d: expected 1 event, got %d", i, len(events))
 		}
-		if em.emittedEvents[0].ID != event.ID {
-			t.Errorf("emitter %d: expected event ID %q, got %q", i, event.ID, em.emittedEvents[0].ID)
+		if events[0].ID != event.ID {
+			t.Errorf("emitter %d: expected event ID %q, got %q", i, event.ID, events[0].ID)
 		}
 	}
 }
@@ -59,9 +49,9 @@ func TestCompositeEmitter_EmitContinuesOnErrorReturnsCombined(t *testing.T) {
 	errFirst := errors.New("emitter 1 failed")
 	errThird := errors.New("emitter 3 failed")
 
-	em1 := &mockEmitter{emitErr: errFirst}
-	em2 := &mockEmitter{}
-	em3 := &mockEmitter{emitErr: errThird}
+	em1 := &testutil.MockEmitter{Err: errFirst}
+	em2 := &testutil.MockEmitter{}
+	em3 := &testutil.MockEmitter{Err: errThird}
 
 	composite := adapter.NewCompositeEmitter(em1, em2, em3)
 	event := sampleEvent()
@@ -72,9 +62,9 @@ func TestCompositeEmitter_EmitContinuesOnErrorReturnsCombined(t *testing.T) {
 	}
 
 	// All emitters should have received the event despite errors.
-	for i, em := range []*mockEmitter{em1, em2, em3} {
-		if len(em.emittedEvents) != 1 {
-			t.Errorf("emitter %d: expected 1 event, got %d", i, len(em.emittedEvents))
+	for i, em := range []*testutil.MockEmitter{em1, em2, em3} {
+		if len(em.GetEvents()) != 1 {
+			t.Errorf("emitter %d: expected 1 event, got %d", i, len(em.GetEvents()))
 		}
 	}
 

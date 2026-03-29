@@ -51,7 +51,7 @@ func TestTimestampForgeryMutation_Apply(t *testing.T) {
 			wantErr:     false,
 			check: func(t *testing.T, store *mockStateStore) {
 				t.Helper()
-				written, ok := store.sensors["etl-daily/clock-sensor"]
+				written, ok := store.Sensors["etl-daily/clock-sensor"]
 				if !ok {
 					t.Fatal("sensor not written to store")
 				}
@@ -95,7 +95,7 @@ func TestTimestampForgeryMutation_Apply(t *testing.T) {
 			wantErr:     false,
 			check: func(t *testing.T, store *mockStateStore) {
 				t.Helper()
-				written, ok := store.sensors["etl-daily/clock-sensor"]
+				written, ok := store.Sensors["etl-daily/clock-sensor"]
 				if !ok {
 					t.Fatal("sensor not written to store")
 				}
@@ -126,7 +126,7 @@ func TestTimestampForgeryMutation_Apply(t *testing.T) {
 			wantErr:     false,
 			check: func(t *testing.T, store *mockStateStore) {
 				t.Helper()
-				written, ok := store.sensors["etl-daily/clock-sensor"]
+				written, ok := store.Sensors["etl-daily/clock-sensor"]
 				if !ok {
 					t.Fatal("sensor not written to store")
 				}
@@ -169,7 +169,7 @@ func TestTimestampForgeryMutation_Apply(t *testing.T) {
 			wantErr:     false,
 			check: func(t *testing.T, store *mockStateStore) {
 				t.Helper()
-				written, ok := store.sensors["etl-daily/new-sensor"]
+				written, ok := store.Sensors["etl-daily/new-sensor"]
 				if !ok {
 					t.Fatal("sensor not written to store")
 				}
@@ -199,7 +199,7 @@ func TestTimestampForgeryMutation_Apply(t *testing.T) {
 			wantErr:     false,
 			check: func(t *testing.T, store *mockStateStore) {
 				t.Helper()
-				written, ok := store.sensors["etl-daily/clock-sensor"]
+				written, ok := store.Sensors["etl-daily/clock-sensor"]
 				if !ok {
 					t.Fatal("sensor not written to store")
 				}
@@ -439,18 +439,18 @@ func TestTimestampForgeryMutation_Apply(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newMockStateStore()
-			store.readSensorErr = tt.readSensorErr
-			store.writeSensorErr = tt.writeSensorErr
+			store.ReadSensorErr = tt.readSensorErr
+			store.WriteSensorErr = tt.writeSensorErr
 
 			if tt.seedSensor != nil {
-				store.sensors[tt.seedSensor.Pipeline+"/"+tt.seedSensor.Key] = *tt.seedSensor
+				store.Sensors[tt.seedSensor.Pipeline+"/"+tt.seedSensor.Key] = *tt.seedSensor
 			}
 
 			transport := newMockTransport()
 			m := mutation.NewTimestampForgeryMutation(store)
 			obj := types.DataObject{Key: "test/data.csv"}
 
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {

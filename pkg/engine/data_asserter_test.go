@@ -16,7 +16,7 @@ import (
 func TestDataStateAsserter_Exists_Found(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		readFn: func(_ context.Context, key string) (io.ReadCloser, error) {
+		ReadFn: func(_ context.Context, key string) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("data")), nil
 		},
 	}
@@ -35,7 +35,7 @@ func TestDataStateAsserter_Exists_Found(t *testing.T) {
 func TestDataStateAsserter_Exists_NotFound(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		readFn: func(_ context.Context, key string) (io.ReadCloser, error) {
+		ReadFn: func(_ context.Context, key string) (io.ReadCloser, error) {
 			return nil, fmt.Errorf("read %s: %w", key, adapter.ErrNotFound)
 		},
 	}
@@ -54,7 +54,7 @@ func TestDataStateAsserter_Exists_NotFound(t *testing.T) {
 func TestDataStateAsserter_Exists_OtherError(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		readFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
+		ReadFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nil, errors.New("connection refused")
 		},
 	}
@@ -73,7 +73,7 @@ func TestDataStateAsserter_Exists_OtherError(t *testing.T) {
 func TestDataStateAsserter_NotExists_NotFound(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		readFn: func(_ context.Context, key string) (io.ReadCloser, error) {
+		ReadFn: func(_ context.Context, key string) (io.ReadCloser, error) {
 			return nil, fmt.Errorf("read %s: %w", key, adapter.ErrNotFound)
 		},
 	}
@@ -92,7 +92,7 @@ func TestDataStateAsserter_NotExists_NotFound(t *testing.T) {
 func TestDataStateAsserter_NotExists_OtherError(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		readFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
+		ReadFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return nil, errors.New("connection refused")
 		},
 	}
@@ -111,7 +111,7 @@ func TestDataStateAsserter_NotExists_OtherError(t *testing.T) {
 func TestDataStateAsserter_NotExists_Exists(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		readFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
+		ReadFn: func(_ context.Context, _ string) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("data")), nil
 		},
 	}
@@ -130,7 +130,7 @@ func TestDataStateAsserter_NotExists_Exists(t *testing.T) {
 func TestDataStateAsserter_IsHeld_Found(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
+		ListHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return []types.HeldObject{
 				{DataObject: types.DataObject{Key: "other.jsonl"}},
 				{DataObject: types.DataObject{Key: "target.jsonl"}},
@@ -152,7 +152,7 @@ func TestDataStateAsserter_IsHeld_Found(t *testing.T) {
 func TestDataStateAsserter_IsHeld_NotFound(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
+		ListHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return []types.HeldObject{{DataObject: types.DataObject{Key: "other.jsonl"}}}, nil
 		},
 	}
@@ -171,7 +171,7 @@ func TestDataStateAsserter_IsHeld_NotFound(t *testing.T) {
 func TestDataStateAsserter_IsHeld_Error(t *testing.T) {
 	t.Parallel()
 	transport := &mockTransport{
-		listHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
+		ListHeldFn: func(_ context.Context) ([]types.HeldObject, error) {
 			return nil, errors.New("storage unavailable")
 		},
 	}

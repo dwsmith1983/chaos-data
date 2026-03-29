@@ -21,7 +21,7 @@ func (s *StreamingLagMutation) Type() string { return "streaming-lag" }
 // Params:
 //   - "lag_duration" (required): Go duration string for the hold period.
 //   - "consumer_group" (optional): consumer group name, recorded in params.
-func (s *StreamingLagMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (s *StreamingLagMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	lagStr, ok := params["lag_duration"]
 	if !ok || lagStr == "" {
 		err := fmt.Errorf("streaming-lag mutation: missing required param \"lag_duration\"")
@@ -34,7 +34,7 @@ func (s *StreamingLagMutation) Apply(ctx context.Context, obj types.DataObject, 
 		return types.MutationRecord{Applied: false, Mutation: "streaming-lag", Error: err.Error()}, err
 	}
 
-	releaseAt := time.Now().Add(lagDuration)
+	releaseAt := clock.Now().Add(lagDuration)
 	if err := transport.Hold(ctx, obj.Key, releaseAt); err != nil {
 		err = fmt.Errorf("streaming-lag mutation: hold failed: %w", err)
 		return types.MutationRecord{Applied: false, Mutation: "streaming-lag", Error: err.Error()}, err
@@ -45,6 +45,6 @@ func (s *StreamingLagMutation) Apply(ctx context.Context, obj types.DataObject, 
 		Mutation:  "streaming-lag",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }

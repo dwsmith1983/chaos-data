@@ -93,7 +93,7 @@ func TestPhantomTriggerMutation_Apply(t *testing.T) {
 			obj := types.DataObject{Key: "test/data.jsonl"}
 
 			m := mutation.NewPhantomTriggerMutation(store)
-			record, err := m.Apply(context.Background(), obj, transport, tt.params)
+			record, err := m.Apply(context.Background(), obj, transport, tt.params, adapter.NewWallClock())
 
 			if tt.wantErr {
 				if err == nil {
@@ -137,7 +137,7 @@ func TestPhantomTriggerMutation_Apply(t *testing.T) {
 
 func TestPhantomTriggerMutation_WriteTriggerStatusError(t *testing.T) {
 	store := newMockStateStore()
-	store.writeTriggerStatusErr = true
+	store.WriteTriggerStatusErr = true
 	transport := newMockTransport()
 	obj := types.DataObject{Key: "test/data.jsonl"}
 
@@ -146,7 +146,7 @@ func TestPhantomTriggerMutation_WriteTriggerStatusError(t *testing.T) {
 		"pipeline": "etl-daily",
 		"schedule": "daily-06",
 		"date":     "2026-03-14",
-	})
+	}, adapter.NewWallClock())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -168,7 +168,7 @@ func TestPhantomTriggerMutation_ParamsRecorded(t *testing.T) {
 	}
 
 	m := mutation.NewPhantomTriggerMutation(store)
-	record, err := m.Apply(context.Background(), obj, transport, params)
+	record, err := m.Apply(context.Background(), obj, transport, params, adapter.NewWallClock())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

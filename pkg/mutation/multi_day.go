@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
@@ -23,7 +22,7 @@ func (m *MultiDayMutation) Type() string { return "multi-day" }
 // Params:
 //   - "days" (required): comma-separated date strings like "2024-01-15,2024-01-16".
 //   - "prefix" (optional): key prefix to prepend before the date partition.
-func (m *MultiDayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string) (types.MutationRecord, error) {
+func (m *MultiDayMutation) Apply(ctx context.Context, obj types.DataObject, transport adapter.DataTransport, params map[string]string, clock adapter.Clock) (types.MutationRecord, error) {
 	daysStr, ok := params["days"]
 	if !ok || daysStr == "" {
 		err := fmt.Errorf("multi-day mutation: missing required param \"days\"")
@@ -65,6 +64,6 @@ func (m *MultiDayMutation) Apply(ctx context.Context, obj types.DataObject, tran
 		Mutation:  "multi-day",
 		Params:    params,
 		Applied:   true,
-		Timestamp: time.Now(),
+		Timestamp: clock.Now(),
 	}, nil
 }
