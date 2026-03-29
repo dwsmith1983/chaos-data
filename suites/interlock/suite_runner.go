@@ -76,29 +76,43 @@ func NewSuiteRunner(store adapter.StateStore, reg *mutation.Registry, coverage *
 
 // RunScenario executes a single chaos scenario: sets up state, injects chaos,
 // triggers Interlock evaluation, evaluates assertions, records coverage, and
-// tears down.
+// tears down. It creates its own isolated harness and namespace.
 func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) ScenarioResult {
-	start := r.clock.Now()
-
 	r.mu.Lock()
 	r.runCounter++
 	runID := fmt.Sprintf("%03d", r.runCounter)
 	r.mu.Unlock()
+
+	h := NewHarness(r.store, r.clock, runID)
+	result := r.runScenarioWithHarness(ctx, ss, h, true)
+	return result
+}
+
+// RunScenarioInHarness executes a chaos scenario using the provided harness
+// instead of creating a new one. This allows sequences to share state across
+// setup and scenario steps by reusing the same namespace. The caller is
+// responsible for teardown of the harness.
+func (r *SuiteRunner) RunScenarioInHarness(ctx context.Context, ss SuiteScenario, h *Harness) ScenarioResult {
+	return r.runScenarioWithHarness(ctx, ss, h, false)
+}
+
+// runScenarioWithHarness is the shared implementation for RunScenario and
+// RunScenarioInHarness. When ownsHarness is true the method performs teardown;
+// when false the caller is responsible for cleanup.
+func (r *SuiteRunner) runScenarioWithHarness(ctx context.Context, ss SuiteScenario, h *Harness, ownsHarness bool) ScenarioResult {
+	start := r.clock.Now()
 
 	result := ScenarioResult{
 		Scenario:   ss.Name,
 		Capability: ss.Capability,
 	}
 
-	// 1. Create harness with unique namespace.
-	h := NewHarness(r.store, r.clock, runID)
-
-	// 2. Resolve date placeholders in pipeline config before setup.
+	// 1. Resolve date placeholders in pipeline config before setup.
 	if ss.Setup != nil && ss.Setup.PipelineConfig != nil {
 		resolveDatePlaceholders(ss.Setup.PipelineConfig, r.clock.Now())
 	}
 
-	// 3. Setup prerequisite state.
+	// 2. Setup prerequisite state.
 	if ss.Setup != nil {
 		if err := h.Setup(ctx, *ss.Setup); err != nil {
 			result.Error = fmt.Sprintf("setup failed: %v", err)
@@ -107,24 +121,24 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		}
 	}
 
-	// 4. Reset event reader for isolation.
+	// 3. Reset event reader for isolation.
 	r.eventReader.Reset()
 
-	// 5. Build the object key — use namespaced pipeline if setup is present,
+	// 4. Build the object key — use namespaced pipeline if setup is present,
 	//    otherwise use the scenario name as a fallback key.
 	objKey := ss.Name
 	if ss.Setup != nil {
 		objKey = h.NamespacedPipeline(ss.Setup.Pipeline)
 	}
 
-	// 6. Enrich mutation params: namespace pipeline, default schedule/date.
+	// 5. Enrich mutation params: namespace pipeline, default schedule/date.
 	enrichedScenario := ss.Scenario
 	if ss.Setup != nil {
 		enrichedScenario.Mutation.Params = enrichMutationParams(
 			ss.Scenario.Mutation.Params, objKey)
 	}
 
-	// 7. Set asserter pipeline for namespace isolation, then create engine.
+	// 6. Set asserter pipeline for namespace isolation, then create engine.
 	var engineOpts []engine.EngineOption
 	engineOpts = append(engineOpts, engine.WithClock(r.clock))
 	if r.asserter != nil {
@@ -149,16 +163,18 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		engineOpts...,
 	)
 
-	// 8. Process (inject chaos).
+	// 7. Process (inject chaos).
 	_, err := eng.ProcessObject(ctx, types.DataObject{Key: objKey})
 	if err != nil {
 		result.Error = fmt.Sprintf("inject failed: %v", err)
-		_ = h.Teardown(ctx)
+		if ownsHarness {
+			_ = h.Teardown(ctx)
+		}
 		r.coverage.Record(ss.Capability, false, r.clock.Now().Sub(start))
 		return result
 	}
 
-	// 9. Trigger Interlock evaluation.
+	// 8. Trigger Interlock evaluation.
 	if ss.Setup != nil {
 		var sensorKeys []string
 		for k := range ss.Setup.Sensors {
@@ -168,13 +184,15 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 			h.NamespacedPipeline(ss.Setup.Pipeline), "default", "default", sensorKeys); err != nil {
 			result.Error = fmt.Sprintf("evaluation failed: %v", err)
 			result.Passed = false
-			_ = h.Teardown(ctx)
+			if ownsHarness {
+				_ = h.Teardown(ctx)
+			}
 			r.coverage.Record(ss.Capability, false, r.clock.Now().Sub(start))
 			return result
 		}
 	}
 
-	// 10. Evaluate assertions.
+	// 9. Evaluate assertions.
 	if ss.Expected != nil {
 		assertResults := eng.EvaluateAssertions(ctx, []scenario.Scenario{enrichedScenario})
 		allPassed := true
@@ -192,13 +210,15 @@ func (r *SuiteRunner) RunScenario(ctx context.Context, ss SuiteScenario) Scenari
 		result.Passed = true
 	}
 
-	// 11. Record coverage.
+	// 10. Record coverage.
 	duration := r.clock.Now().Sub(start)
 	result.Duration = duration
 	r.coverage.Record(ss.Capability, result.Passed, duration)
 
-	// 12. Teardown.
-	_ = h.Teardown(ctx)
+	// 11. Teardown only when this method owns the harness.
+	if ownsHarness {
+		_ = h.Teardown(ctx)
+	}
 
 	return result
 }

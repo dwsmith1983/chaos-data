@@ -9,6 +9,7 @@ import (
 
 	"github.com/dwsmith1983/chaos-data/pkg/adapter"
 	"github.com/dwsmith1983/chaos-data/pkg/mutation"
+	"github.com/dwsmith1983/chaos-data/pkg/scenario"
 	"github.com/dwsmith1983/chaos-data/pkg/types"
 )
 
@@ -678,6 +679,189 @@ func TestSequenceRunner_AssertionDefaultTimeout(t *testing.T) {
 	if !result.Steps[0].Passed {
 		t.Errorf("step 0 should pass with default timeout; error: %s", result.Steps[0].Error)
 	}
+}
+
+// TestSequenceRunner_NamespaceIsolation verifies that a sequence's Setup step
+// and a subsequent Scenario step share the same harness namespace so that state
+// written during setup is visible to the scenario. Before the fix,
+// RunScenario created its own harness with a different runID, making state
+// from earlier sequence steps invisible.
+func TestSequenceRunner_NamespaceIsolation(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	reg := mutation.NewRegistry()
+	ct, err := NewCoverageTracker("coverage.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner := NewSuiteRunner(store, reg, ct,
+		WithSuiteClock(clk),
+		WithSuiteEvaluator(&AWSInterlockEvaluator{}),
+	)
+
+	// Step 1: Setup writes sensor state to pipeline "bronze-cdr".
+	// Step 2: Scenario loads testdata/test-scenario.yaml which also
+	//         references pipeline "bronze-cdr" in its own setup block.
+	//         With namespace isolation both steps use the same harness,
+	//         so the scenario's setup writes to "suite-001-bronze-cdr"
+	//         (same namespace as the sequence).
+	//         The scenario's mutation (interlock-phantom-sensor) is not
+	//         registered, so injection will fail. That is fine — the test
+	//         only cares that the scenario step used the sequence's runID
+	//         (001) rather than allocating a new one (002).
+	seq := Sequence{
+		Name:         "namespace-isolation-test",
+		Description:  "Verifies setup and scenario steps share a harness",
+		Capabilities: []string{"validation/equals"},
+		Steps: []SequenceStep{
+			{
+				Name: "write-sensor-state",
+				Setup: &SetupSpec{
+					Pipeline:      "bronze-cdr",
+					TriggerStatus: "COMPLETED",
+					Sensors: map[string]map[string]interface{}{
+						"hourly-status": {
+							"status":       "COMPLETE",
+							"sensor_count": 1000,
+						},
+					},
+				},
+			},
+			{
+				// Scenario step — injection will fail (unregistered mutation)
+				// but the important thing is it did NOT allocate a new runID.
+				Name:              "inject-scenario",
+				Scenario:          "testdata/test-scenario.yaml",
+				ContinueOnFailure: true,
+			},
+		},
+	}
+
+	result := runner.RunSequence(context.Background(), seq)
+
+	if len(result.Steps) != 2 {
+		t.Fatalf("Steps len = %d, want 2", len(result.Steps))
+	}
+	if !result.Steps[0].Passed {
+		t.Fatalf("step 0 (setup) should pass; error: %s", result.Steps[0].Error)
+	}
+
+	// The critical assertion: RunSequence increments runCounter once (to 1).
+	// Before the fix, RunScenario inside the sequence would increment it
+	// again (to 2), creating namespace "suite-002-". After the fix,
+	// RunScenarioInHarness does NOT increment the counter, so it stays at 1.
+	runner.mu.Lock()
+	counter := runner.runCounter
+	runner.mu.Unlock()
+
+	if counter != 1 {
+		t.Errorf("runCounter = %d, want 1 (RunScenarioInHarness must not allocate a new runID)", counter)
+	}
+}
+
+// TestRunScenarioInHarness_SharedState verifies that RunScenarioInHarness uses
+// the provided harness so that state written prior to the call is visible to
+// the scenario's setup and mutation steps.
+func TestRunScenarioInHarness_SharedState(t *testing.T) {
+	t.Parallel()
+
+	store := newTestSQLiteStore(t)
+	clk := adapter.NewTestClock(time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC))
+	reg := mutation.NewRegistry()
+	ct, err := NewCoverageTracker("coverage.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner := NewSuiteRunner(store, reg, ct,
+		WithSuiteClock(clk),
+		WithSuiteEvaluator(&AWSInterlockEvaluator{}),
+	)
+
+	// Create a harness with a known runID.
+	h := NewHarness(store, clk, "shared-ns")
+
+	// Write sensor state through the harness.
+	ctx := context.Background()
+	err = h.Setup(ctx, SetupSpec{
+		Pipeline:      "my-pipe",
+		TriggerStatus: "COMPLETED",
+		Sensors: map[string]map[string]interface{}{
+			"sensor-a": {"status": "COMPLETE", "sensor_count": 42},
+		},
+	})
+	if err != nil {
+		t.Fatalf("harness setup: %v", err)
+	}
+
+	// Verify state is in the expected namespace.
+	sd, err := store.ReadSensor(ctx, "suite-shared-ns-my-pipe", "sensor-a")
+	if err != nil {
+		t.Fatalf("ReadSensor: %v", err)
+	}
+	if string(sd.Status) != "COMPLETE" {
+		t.Fatalf("pre-condition: sensor status = %q, want COMPLETE", sd.Status)
+	}
+
+	// Run a scenario through the same harness. The scenario has its own
+	// setup with the same pipeline, so it writes to the same namespace.
+	ss := SuiteScenario{
+		Scenario: scenario.Scenario{
+			Name:        "shared-harness-test",
+			Category:    "state-consistency",
+			Severity:    types.SeverityLow,
+			Version:     1,
+			Target:      scenario.TargetSpec{Layer: "state"},
+			Mutation:    scenario.MutationSpec{Type: "delay"}, // unregistered — will fail
+			Probability: 1.0,
+			Safety:      scenario.ScenarioSafety{MaxAffectedPct: 100},
+		},
+		Setup: &SetupSpec{
+			Pipeline:      "my-pipe",
+			TriggerStatus: "READY",
+		},
+		Capability: "validation/equals",
+	}
+
+	result := runner.RunScenarioInHarness(ctx, ss, h)
+
+	// Injection fails (unregistered mutation) but the scenario's setup
+	// should have written to the SAME namespace as our prior harness setup.
+	// Verify the trigger status was updated in the shared namespace.
+	triggerKey := adapter.TriggerKey{
+		Pipeline: "suite-shared-ns-my-pipe",
+		Schedule: "default",
+		Date:     "default",
+	}
+	status, err := store.ReadTriggerStatus(ctx, triggerKey)
+	if err != nil {
+		t.Fatalf("ReadTriggerStatus: %v", err)
+	}
+	// The scenario's setup overwrites the trigger to "READY" in the same
+	// namespace — proving RunScenarioInHarness reused the harness.
+	if status != "READY" {
+		t.Errorf("trigger status = %q, want READY (proves shared namespace)", status)
+	}
+
+	// Original sensor should still be in the same namespace.
+	sd2, err := store.ReadSensor(ctx, "suite-shared-ns-my-pipe", "sensor-a")
+	if err != nil {
+		t.Fatalf("ReadSensor after scenario: %v", err)
+	}
+	if string(sd2.Status) != "COMPLETE" {
+		t.Errorf("sensor-a status = %q, want COMPLETE", sd2.Status)
+	}
+
+	// Scenario result should reference the correct scenario name.
+	if result.Scenario != "shared-harness-test" {
+		t.Errorf("Scenario = %q, want shared-harness-test", result.Scenario)
+	}
+
+	// Clean up.
+	_ = h.Teardown(ctx)
 }
 
 func TestSequenceRunner_AssertionFallbackWithoutAsserter(t *testing.T) {

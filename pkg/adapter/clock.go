@@ -1,6 +1,9 @@
 package adapter
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Clock abstracts time for testability.
 type Clock interface {
@@ -55,7 +58,9 @@ func (c *WallClock) After(d time.Duration) <-chan time.Time {
 
 // TestClock implements Clock for testing, allowing time to be artificially advanced.
 type TestClock struct {
-	now time.Time
+	mu      sync.Mutex
+	now     time.Time
+	tickers []*TestTicker
 }
 
 func NewTestClock(start time.Time) *TestClock {
@@ -63,34 +68,65 @@ func NewTestClock(start time.Time) *TestClock {
 }
 
 func (c *TestClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.now
 }
 
-// Advance instantly moves the clock forward by the given duration.
+// Advance instantly moves the clock forward by the given duration and
+// sends a tick to every active ticker registered with this clock.
 func (c *TestClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.now = c.now.Add(d)
+	for _, t := range c.tickers {
+		select {
+		case t.c <- c.now:
+		default:
+			// Channel full — drop tick to avoid blocking.
+		}
+	}
 }
 
 func (c *TestClock) NewTicker(d time.Duration) Ticker {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	t := &TestTicker{
-		c:    make(chan time.Time, 1),
-		stop: make(chan struct{}),
+		c:     make(chan time.Time, 1),
+		stop:  make(chan struct{}),
+		clock: c,
 	}
 	// Instantly tick once for immediate evaluation in loops.
 	t.c <- c.now
+	c.tickers = append(c.tickers, t)
 	return t
 }
 
 func (c *TestClock) After(d time.Duration) <-chan time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	ch := make(chan time.Time, 1)
 	ch <- c.now.Add(d)
 	return ch
 }
 
+// removeTicker removes the given ticker from the clock's active list.
+func (c *TestClock) removeTicker(t *TestTicker) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i, tt := range c.tickers {
+		if tt == t {
+			c.tickers = append(c.tickers[:i], c.tickers[i+1:]...)
+			return
+		}
+	}
+}
+
 // TestTicker is a stub ticker for TestClock.
 type TestTicker struct {
-	c    chan time.Time
-	stop chan struct{}
+	c     chan time.Time
+	stop  chan struct{}
+	clock *TestClock
 }
 
 func (t *TestTicker) C() <-chan time.Time {
@@ -98,5 +134,6 @@ func (t *TestTicker) C() <-chan time.Time {
 }
 
 func (t *TestTicker) Stop() {
+	t.clock.removeTicker(t)
 	close(t.stop)
 }

@@ -80,13 +80,49 @@ func EvaluateAssertionSet(
 	ctx, cancel := context.WithTimeout(ctx, within)
 	defer cancel()
 
-	ticker := clk.NewTicker(pollInterval)
-	defer ticker.Stop()
-
 	var dataAsserter *DataStateAsserter
 	if transport != nil {
 		dataAsserter = NewDataStateAsserter(transport)
 	}
+
+	// evaluatePending runs one evaluation pass over pending assertions,
+	// updating results and returning only the still-unresolved assertions.
+	evaluatePending := func(pending []pendingAssertion) []pendingAssertion {
+		remaining := make([]pendingAssertion, 0, len(pending))
+		for _, p := range pending {
+			ok, err := evaluateOneAssertion(ctx, p.assertion, asserter, dataAsserter)
+			if err != nil {
+				results[p.idx].Error = err.Error()
+				remaining = append(remaining, p)
+				continue
+			}
+			if p.negative {
+				if ok {
+					results[p.idx].Satisfied = false
+					results[p.idx].EvalAt = clk.Now()
+				} else {
+					remaining = append(remaining, p)
+				}
+			} else {
+				if ok {
+					results[p.idx].Satisfied = true
+					results[p.idx].EvalAt = clk.Now()
+				} else {
+					remaining = append(remaining, p)
+				}
+			}
+		}
+		return remaining
+	}
+
+	// Immediate evaluation pass — avoids waiting for the first ticker tick.
+	pending = evaluatePending(pending)
+	if len(pending) == 0 {
+		return results
+	}
+
+	ticker := clk.NewTicker(pollInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
@@ -100,31 +136,7 @@ func EvaluateAssertionSet(
 			}
 			return results
 		case <-ticker.C():
-			remaining := make([]pendingAssertion, 0, len(pending))
-			for _, p := range pending {
-				ok, err := evaluateOneAssertion(ctx, p.assertion, asserter, dataAsserter)
-				if err != nil {
-					results[p.idx].Error = err.Error()
-					remaining = append(remaining, p)
-					continue
-				}
-				if p.negative {
-					if ok {
-						results[p.idx].Satisfied = false
-						results[p.idx].EvalAt = clk.Now()
-					} else {
-						remaining = append(remaining, p)
-					}
-				} else {
-					if ok {
-						results[p.idx].Satisfied = true
-						results[p.idx].EvalAt = clk.Now()
-					} else {
-						remaining = append(remaining, p)
-					}
-				}
-			}
-			pending = remaining
+			pending = evaluatePending(pending)
 			if len(pending) == 0 {
 				return results
 			}

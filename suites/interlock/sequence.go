@@ -159,7 +159,7 @@ func (r *SuiteRunner) runSequenceStep(ctx context.Context, h *Harness, step Sequ
 			return sr
 		}
 
-		scenarioResult := r.RunScenario(ctx, ss)
+		scenarioResult := r.RunScenarioInHarness(ctx, ss, h)
 		if !scenarioResult.Passed {
 			sr.Passed = false
 			sr.Error = scenarioResult.Error
