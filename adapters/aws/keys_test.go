@@ -84,3 +84,60 @@ func TestControlPK(t *testing.T) {
 		t.Errorf("ControlPK(%q) = %q, want %q", "kill-switch", got, want)
 	}
 }
+
+func TestDepsPK(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		pipeline string
+		want     string
+	}{
+		{name: "simple pipeline", pipeline: "bronze-cdr", want: "DEPS#bronze-cdr"},
+		{name: "nested name", pipeline: "ml/training/v2", want: "DEPS#ml/training/v2"},
+		{name: "empty string", pipeline: "", want: "DEPS#"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := chaosaws.DepsPK(tt.pipeline); got != tt.want {
+				t.Errorf("DepsPK(%q) = %q, want %q", tt.pipeline, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownstreamSK(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		downstream string
+		want       string
+	}{
+		{name: "simple downstream", downstream: "silver-cdr-hour", want: "DOWNSTREAM#silver-cdr-hour"},
+		{name: "nested name", downstream: "reporting/daily", want: "DOWNSTREAM#reporting/daily"},
+		{name: "empty string", downstream: "", want: "DOWNSTREAM#"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := chaosaws.DownstreamSK(tt.downstream); got != tt.want {
+				t.Errorf("DownstreamSK(%q) = %q, want %q", tt.downstream, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownstreamSKPrefix(t *testing.T) {
+	t.Parallel()
+
+	got := chaosaws.DownstreamSKPrefix()
+	want := "DOWNSTREAM#"
+
+	if got != want {
+		t.Errorf("DownstreamSKPrefix() = %q, want %q", got, want)
+	}
+}

@@ -105,3 +105,19 @@ func InterlockEventSK(timestamp time.Time, eventType string) string {
 func InterlockEventSKPrefix(_ string) string {
 	return ""
 }
+
+// DepsPK returns the partition key for a dependency record.
+func DepsPK(pipeline string) string {
+	return "DEPS#" + pipeline
+}
+
+// DownstreamSK returns the sort key for a downstream dependency record.
+func DownstreamSK(downstream string) string {
+	return "DOWNSTREAM#" + downstream
+}
+
+// DownstreamSKPrefix returns the sort key prefix for querying all
+// downstream dependencies of a pipeline.
+func DownstreamSKPrefix() string {
+	return "DOWNSTREAM#"
+}
