@@ -40,23 +40,25 @@ func NewDynamoDBDependencyResolver(api DynamoDBAPI, tableName string) *DynamoDBD
 // using a visited set for cycle protection. The original target is
 // excluded from results. Returns nil when no dependencies are found.
 //
-// Fail-open: on query error the walk stops and returns whatever has
-// been collected so far (consistent with engine fail-open behavior).
+// On error, the walk stops and returns whatever has been collected so
+// far along with the error, letting the caller decide how to handle it.
 func (r *DynamoDBDependencyResolver) GetDownstream(ctx context.Context, target string) ([]string, error) {
 	visited := map[string]struct{}{target: {}}
 	queue := []string{target}
 	var result []string
 
+	// BFS by level. Each iteration processes one depth level and issues
+	// one DynamoDB Query per pipeline in the queue. Worst case query
+	// count is maxBFSDepth × max_fan_out.
 	for depth := 0; depth < maxBFSDepth && len(queue) > 0; depth++ {
 		var nextQueue []string
 		for _, pipeline := range queue {
 			downstreams, err := r.queryDownstream(ctx, pipeline)
 			if err != nil {
-				// Fail-open: return what we have so far.
 				if len(result) == 0 {
-					return nil, nil
+					return nil, err
 				}
-				return result, nil
+				return result, err
 			}
 			for _, ds := range downstreams {
 				if _, seen := visited[ds]; seen {
@@ -77,39 +79,47 @@ func (r *DynamoDBDependencyResolver) GetDownstream(ctx context.Context, target s
 }
 
 // queryDownstream queries the DynamoDB table for all downstream
-// dependencies of the given pipeline. Returns the pipeline names
-// (with the DOWNSTREAM# prefix stripped).
+// dependencies of the given pipeline, handling pagination. Returns
+// the pipeline names (with the DOWNSTREAM# prefix stripped).
 func (r *DynamoDBDependencyResolver) queryDownstream(ctx context.Context, pipeline string) ([]string, error) {
 	pk := DepsPK(pipeline)
 	skPrefix := DownstreamSKPrefix()
-
-	out, err := r.api.Query(ctx, &dynamodb.QueryInput{
-		TableName:              strPtr(r.tableName),
-		KeyConditionExpression: strPtr("PK = :pk AND begins_with(SK, :skPrefix)"),
-		ExpressionAttributeValues: map[string]dtypes.AttributeValue{
-			":pk":       &dtypes.AttributeValueMemberS{Value: pk},
-			":skPrefix": &dtypes.AttributeValueMemberS{Value: skPrefix},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
+	expr := "PK = :pk AND begins_with(SK, :skPrefix)"
 
 	var result []string
-	for _, item := range out.Items {
-		sk, ok := stringAttr(item, "SK")
-		if !ok {
-			continue
+	var lastKey map[string]dtypes.AttributeValue
+
+	for {
+		out, err := r.api.Query(ctx, &dynamodb.QueryInput{
+			TableName:              &r.tableName,
+			KeyConditionExpression: &expr,
+			ExpressionAttributeValues: map[string]dtypes.AttributeValue{
+				":pk":       &dtypes.AttributeValueMemberS{Value: pk},
+				":skPrefix": &dtypes.AttributeValueMemberS{Value: skPrefix},
+			},
+			ExclusiveStartKey: lastKey,
+		})
+		if err != nil {
+			return nil, err
 		}
-		downstream := strings.TrimPrefix(sk, skPrefix)
-		if downstream != "" {
-			result = append(result, downstream)
+
+		for _, item := range out.Items {
+			sk, ok := stringAttr(item, "SK")
+			if !ok {
+				continue
+			}
+			downstream := strings.TrimPrefix(sk, skPrefix)
+			if downstream != "" {
+				result = append(result, downstream)
+			}
 		}
+
+		if out.LastEvaluatedKey == nil {
+			break
+		}
+		lastKey = out.LastEvaluatedKey
 	}
+
 	return result, nil
 }
 
-// strPtr returns a pointer to the given string.
-func strPtr(s string) *string {
-	return &s
-}

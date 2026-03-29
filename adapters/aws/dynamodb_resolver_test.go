@@ -3,6 +3,7 @@ package aws_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -32,11 +33,7 @@ func queryRouter(deps map[string][]string) func(context.Context, *dynamodb.Query
 			return &dynamodb.QueryOutput{}, nil
 		}
 
-		// Strip "DEPS#" prefix to get pipeline name
-		pipeline := pkVal.Value
-		if len(pipeline) > 5 {
-			pipeline = pipeline[5:] // strip "DEPS#"
-		}
+		pipeline := strings.TrimPrefix(pkVal.Value, "DEPS#")
 
 		downstreams, found := deps[pipeline]
 		if !found {
@@ -162,7 +159,7 @@ func TestDynamoDBResolver_GetDownstream_CycleProtection(t *testing.T) {
 	}
 }
 
-func TestDynamoDBResolver_GetDownstream_ErrorFailOpen(t *testing.T) {
+func TestDynamoDBResolver_GetDownstream_ErrorSurfaced(t *testing.T) {
 	t.Parallel()
 
 	mock := &mockDynamoDBAPI{
@@ -173,10 +170,10 @@ func TestDynamoDBResolver_GetDownstream_ErrorFailOpen(t *testing.T) {
 
 	resolver := chaosaws.NewDynamoDBDependencyResolver(mock, "interlock-control")
 	got, err := resolver.GetDownstream(context.Background(), "any-pipeline")
-	if err != nil {
-		t.Fatalf("expected nil error (fail-open), got: %v", err)
+	if err == nil {
+		t.Fatal("expected error to be surfaced, got nil")
 	}
 	if got != nil {
-		t.Errorf("expected nil result on error, got %v", got)
+		t.Errorf("expected nil result on first-query error, got %v", got)
 	}
 }
