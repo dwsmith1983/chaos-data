@@ -217,65 +217,41 @@ func TestScientificNotation_ContainsExpectedTokens(t *testing.T) {
 	}
 }
 
-func TestScientificNotation_ValidJSON(t *testing.T) {
+// Note: scientific notation chaos payloads contain 1e309 (overflow) which
+// Go's encoding/json rejects outright — that is the chaos behavior we want
+// to verify exists in the bytes. So these tests check the raw byte content
+// directly rather than round-tripping through json.Unmarshal (which would
+// be defeated by the very chaos we're trying to test).
+
+func TestScientificNotation_ContainsOverflowLiteral(t *testing.T) {
 	g := generatorByName(t, "scientific_notation")
-	var v interface{}
-	if err := json.Unmarshal(g.Generate(), &v); err != nil {
-		t.Fatalf("json.Unmarshal failed: %v", err)
+	payload := g.Generate()
+	if !bytes.Contains(payload, []byte("1e309")) {
+		t.Errorf("payload missing 1e309 overflow literal: %s", payload)
 	}
 }
 
-func TestScientificNotation_OverflowBecomesInf(t *testing.T) {
+func TestScientificNotation_ContainsUnderflowLiteral(t *testing.T) {
 	g := generatorByName(t, "scientific_notation")
-	var v map[string]interface{}
-	if err := json.Unmarshal(g.Generate(), &v); err != nil {
-		t.Fatalf("json.Unmarshal failed: %v", err)
-	}
-
-	// 1e309 overflows float64 → json.Unmarshal stores +Inf.
-	overflow := v["overflow"].(float64)
-	if !math.IsInf(overflow, 1) {
-		t.Errorf("overflow (1e309) = %v; want +Inf", overflow)
+	payload := g.Generate()
+	if !bytes.Contains(payload, []byte("1e-325")) {
+		t.Errorf("payload missing 1e-325 underflow literal: %s", payload)
 	}
 }
 
-func TestScientificNotation_UnderflowBecomesZero(t *testing.T) {
+func TestScientificNotation_ContainsNearMaxLiteral(t *testing.T) {
 	g := generatorByName(t, "scientific_notation")
-	var v map[string]interface{}
-	if err := json.Unmarshal(g.Generate(), &v); err != nil {
-		t.Fatalf("json.Unmarshal failed: %v", err)
-	}
-
-	// 1e-325 underflows float64 → 0.
-	underflow := v["underflow"].(float64)
-	if underflow != 0 {
-		t.Errorf("underflow (1e-325) = %v; want 0", underflow)
+	payload := g.Generate()
+	if !bytes.Contains(payload, []byte("1e308")) {
+		t.Errorf("payload missing 1e308 near-max literal: %s", payload)
 	}
 }
 
-func TestScientificNotation_NearMax(t *testing.T) {
+func TestScientificNotation_ContainsNearMinLiteral(t *testing.T) {
 	g := generatorByName(t, "scientific_notation")
-	var v map[string]interface{}
-	if err := json.Unmarshal(g.Generate(), &v); err != nil {
-		t.Fatalf("json.Unmarshal failed: %v", err)
-	}
-
-	nearMax := v["near_max"].(float64)
-	if math.IsInf(nearMax, 0) || nearMax <= 0 {
-		t.Errorf("near_max (1e308) = %v; expected finite positive value", nearMax)
-	}
-}
-
-func TestScientificNotation_NearMin(t *testing.T) {
-	g := generatorByName(t, "scientific_notation")
-	var v map[string]interface{}
-	if err := json.Unmarshal(g.Generate(), &v); err != nil {
-		t.Fatalf("json.Unmarshal failed: %v", err)
-	}
-
-	nearMin := v["near_min"].(float64)
-	if nearMin <= 0 || math.IsInf(nearMin, 0) {
-		t.Errorf("near_min (1e-324) = %v; expected small positive value", nearMin)
+	payload := g.Generate()
+	if !bytes.Contains(payload, []byte("1e-324")) {
+		t.Errorf("payload missing 1e-324 near-min literal: %s", payload)
 	}
 }
 
@@ -289,15 +265,13 @@ func TestScientificNotation_Determinism(t *testing.T) {
 	}
 }
 
-func TestScientificNotation_Count(t *testing.T) {
+func TestScientificNotation_HasFourKeys(t *testing.T) {
 	g := generatorByName(t, "scientific_notation")
-	var v map[string]interface{}
-	if err := json.Unmarshal(g.Generate(), &v); err != nil {
-		t.Fatalf("json.Unmarshal failed: %v", err)
-	}
-	const wantKeys = 4
-	if len(v) != wantKeys {
-		t.Errorf("decoded object has %d keys; want %d", len(v), wantKeys)
+	payload := g.Generate()
+	for _, key := range []string{"near_max", "near_min", "overflow", "underflow"} {
+		if !bytes.Contains(payload, []byte(`"`+key+`"`)) {
+			t.Errorf("payload missing key %q: %s", key, payload)
+		}
 	}
 }
 
