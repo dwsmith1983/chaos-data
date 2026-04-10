@@ -23,59 +23,56 @@ func (g EncodingGenerator) Category() string {
 	return "encoding"
 }
 
-// Generate produces a payload containing various encoding-related chaos cases.
+// Generate produces encoding-related chaos data.
 func (g EncodingGenerator) Generate(opts chaosdata.GenerateOpts) (chaosdata.Payload, error) {
-	records := encodingRecords()
+	records := g.allRecords()
 
-	count := opts.Count
-	if count < 1 {
-		count = 1
+	if opts.Count > 0 && opts.Count < len(records) {
+		if opts.Count < len(records) {
+			records = records[:opts.Count]
+		}
 	}
 
-	all := make([]map[string]interface{}, 0, len(records)*count)
-	for i := 0; i < count; i++ {
-		all = append(all, records...)
-	}
-
-	data, err := json.Marshal(all)
+	data, err := json.Marshal(records)
 	if err != nil {
-		return chaosdata.Payload{}, fmt.Errorf("encoding: marshal payload: %w", err)
+		return chaosdata.Payload{}, fmt.Errorf("failed to marshal encoding chaos data: %w", err)
 	}
 
 	return chaosdata.Payload{
 		Data: data,
 		Type: "application/json",
 		Attributes: map[string]string{
-			"generator": "encoding",
-			"category":  "encoding",
+			"category": g.Category(),
+			"name":     g.Name(),
+			"count":    fmt.Sprintf("%d", len(records)),
 		},
 	}, nil
 }
 
-func encodingRecords() []map[string]interface{} {
+func (g EncodingGenerator) allRecords() []map[string]interface{} {
 	return []map[string]interface{}{
-		// Invalid UTF-8
+		// Invalid UTF-8 byte sequences
 		rec("invalid_utf8_sequence", string([]byte{0xff, 0xfe, 0xfd})),
-		rec("truncated_utf8", string([]byte{0xe2, 0x82})), // Partial Euro symbol
+		rec("invalid_utf8_continuation", string([]byte{0xc3, 0x28})),
 
-		// BOM Markers
-		rec("bom_utf8", "\xEF\xBB\xBFcontent"),
-		rec("bom_utf16le", "\xFF\xFEcontent"),
-		rec("bom_utf16be", "\xFE\xFFcontent"),
+		// BOM markers
+		rec("bom_utf8", string([]byte{0xef, 0xbb, 0xbf})+"UTF-8 BOM"),
+		rec("bom_utf16_le", string([]byte{0xff, 0xfe, 0x55, 0x00, 0x54, 0x00, 0x46, 0x00, 0x2d, 0x00, 0x31, 0x00, 0x36, 0x00, 0x20, 0x00, 0x4c, 0x00, 0x45, 0x00})),
+		rec("bom_utf16_be", string([]byte{0xfe, 0xff, 0x00, 0x55, 0x00, 0x54, 0x00, 0x46, 0x00, 0x00, 0x2d, 0x00, 0x31, 0x00, 0x36, 0x00, 0x20, 0x00, 0x42, 0x00, 0x45})),
 
-		// Overlong UTF-8
-		rec("overlong_utf8_a", string([]byte{0xc1, 0xa1})),
+		// Overlong UTF-8 encodings
+		rec("overlong_utf8_slash", string([]byte{0xc0, 0xaf})),
+		rec("overlong_utf8_dot", string([]byte{0xc0, 0xae})),
 
-		// Mixed Encoding
-		rec("mixed_encoding", "UTF-8 content mixed with \x80\x81\x82"),
+		// Mixed encoding strings
+		rec("mixed_encoding_latin1", "Hello "+string([]byte{0xbd, 0xb2, 0x3d, 0xbc})),
 
-		// Base64 Padding
-		rec("base64_no_padding", "SGVsbG8gd29ybGQ"),   // "Hello world"
-		rec("base64_one_padding", "SGVsbG8gd29ybGQ="),
-		rec("base64_two_padding", "SGVsbG8gd29ybGQ=="),
-		rec("base64_invalid_padding", "SGVsbG8gd29ybGQ==="),
+		// Base64 padding edge cases
+		rec("base64_no_padding", "SGVsbG8"),
+		rec("base64_valid_padding", "SGVsbG8="),
+		rec("base64_invalid_padding", "SGVsbG8=="),
 
-		// Resembling other encodings/formats
+		// Strings resembling other encodings/formats (JSON/XML snippets)
 		rec("resembles_json", `{"key": "value", "nested": [1, 2, 3]}`),
 		rec("resembles_xml", `<?xml version="1.0"?><root><item id="1">text</item></root>`),
 		rec("resembles_yaml", "key: value\nlist:\n  - item1\n  - item2"),
