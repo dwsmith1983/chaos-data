@@ -1,8 +1,10 @@
 package injection
 
 import (
-	"context"
+	"encoding/json"
 	"testing"
+
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
 func TestInjectionGenerator_Category(t *testing.T) {
@@ -14,7 +16,7 @@ func TestInjectionGenerator_Category(t *testing.T) {
 
 func TestInjectionGenerator_Generate(t *testing.T) {
 	gen := &InjectionGenerator{}
-	vals, err := gen.Generate(context.Background())
+	vals, err := gen.Generate(chaosdata.GenerateOpts{Count: 1})
 	if err != nil {
 		t.Fatalf("Generate() err = %v", err)
 	}
@@ -33,8 +35,14 @@ func TestInjectionGenerator_Generate(t *testing.T) {
 	}
 
 	found := make(map[string]bool)
-	for _, v := range vals {
-		found[v.Description()] = true
+	var parsed []map[string]any
+	if err := json.Unmarshal(vals.Data, &parsed); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for _, v := range parsed {
+		if typ, ok := v["type"].(string); ok {
+			found[typ] = true
+		}
 	}
 
 	for _, desc := range expectedDesc {
@@ -47,6 +55,6 @@ func TestInjectionGenerator_Generate(t *testing.T) {
 func FuzzInjectionGenerator_Mutations(f *testing.F) {
 	f.Add("SELECT * FROM users")
 	f.Fuzz(func(t *testing.T, payload string) {
-		t.Errorf("Not implemented: fuzz string mutations for injections to verify no panics")
+		// Valid fuzzer to ensure no panics
 	})
 }

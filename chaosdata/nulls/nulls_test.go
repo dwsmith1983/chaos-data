@@ -1,8 +1,10 @@
 package nulls
 
 import (
-	"context"
+	"encoding/json"
 	"testing"
+
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
 func TestNullsGenerator_Category(t *testing.T) {
@@ -14,7 +16,7 @@ func TestNullsGenerator_Category(t *testing.T) {
 
 func TestNullsGenerator_Generate(t *testing.T) {
 	gen := &NullsGenerator{}
-	vals, err := gen.Generate(context.Background())
+	vals, err := gen.Generate(chaosdata.GenerateOpts{Count: 1})
 	if err != nil {
 		t.Fatalf("Generate() err = %v", err)
 	}
@@ -35,8 +37,14 @@ func TestNullsGenerator_Generate(t *testing.T) {
 	}
 
 	found := make(map[string]bool)
-	for _, v := range vals {
-		found[v.Description()] = true
+	var parsed []map[string]any
+	if err := json.Unmarshal(vals.Data, &parsed); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for _, v := range parsed {
+		if typ, ok := v["type"].(string); ok {
+			found[typ] = true
+		}
 	}
 
 	for _, desc := range expectedDesc {

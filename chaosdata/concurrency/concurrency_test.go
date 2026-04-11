@@ -1,9 +1,11 @@
 package concurrency
 
 import (
-	"context"
+	"encoding/json"
 	"sync"
 	"testing"
+
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
 func TestConcurrencyGenerator_Category(t *testing.T) {
@@ -15,7 +17,7 @@ func TestConcurrencyGenerator_Category(t *testing.T) {
 
 func TestConcurrencyGenerator_Generate(t *testing.T) {
 	gen := &ConcurrencyGenerator{}
-	vals, err := gen.Generate(context.Background())
+	vals, err := gen.Generate(chaosdata.GenerateOpts{Count: 1})
 	if err != nil {
 		t.Fatalf("Generate() err = %v", err)
 	}
@@ -29,8 +31,14 @@ func TestConcurrencyGenerator_Generate(t *testing.T) {
 	}
 
 	found := make(map[string]bool)
-	for _, v := range vals {
-		found[v.Description()] = true
+	var parsed []map[string]any
+	if err := json.Unmarshal(vals.Data, &parsed); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for _, v := range parsed {
+		if typ, ok := v["type"].(string); ok {
+			found[typ] = true
+		}
 	}
 
 	for _, desc := range expectedDesc {
@@ -43,13 +51,13 @@ func TestConcurrencyGenerator_Generate(t *testing.T) {
 func TestConcurrencyGenerator_ConcurrentGenerate(t *testing.T) {
 	gen := &ConcurrencyGenerator{}
 	var wg sync.WaitGroup
-	
+
 	// Must run with -race flag
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := gen.Generate(context.Background())
+			_, err := gen.Generate(chaosdata.GenerateOpts{Count: 1})
 			if err != nil {
 				t.Errorf("Concurrent Generate() failed: %v", err)
 			}

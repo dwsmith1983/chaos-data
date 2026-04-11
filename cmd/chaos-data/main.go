@@ -5,6 +5,20 @@ import (
 	"fmt"
 	"os"
 
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/boundary"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/concurrency"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/encoding"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/gospecific"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/injection"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/nulls"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/numeric"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/protocol"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/referential"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/schemadrift"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/structural"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/temporal"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/volume"
+
 	"github.com/spf13/cobra"
 )
 
@@ -29,6 +43,7 @@ func rootCmd() *cobra.Command {
 	root.AddCommand(statusCmd())
 	root.AddCommand(watchCmd())
 	root.AddCommand(suiteCmd())
+	root.AddCommand(engineCmd())
 
 	return root
 }

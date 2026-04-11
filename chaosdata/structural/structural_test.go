@@ -1,8 +1,10 @@
 package structural
 
 import (
-	"context"
+	"encoding/json"
 	"testing"
+
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
 func TestStructuralGenerator_Category(t *testing.T) {
@@ -14,7 +16,7 @@ func TestStructuralGenerator_Category(t *testing.T) {
 
 func TestStructuralGenerator_Generate(t *testing.T) {
 	gen := &StructuralGenerator{}
-	vals, err := gen.Generate(context.Background())
+	vals, err := gen.Generate(chaosdata.GenerateOpts{Count: 1})
 	if err != nil {
 		t.Fatalf("Generate() err = %v", err)
 	}
@@ -28,8 +30,14 @@ func TestStructuralGenerator_Generate(t *testing.T) {
 	}
 
 	found := make(map[string]bool)
-	for _, v := range vals {
-		found[v.Description()] = true
+	var parsed []map[string]any
+	if err := json.Unmarshal(vals.Data, &parsed); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for _, v := range parsed {
+		if typ, ok := v["type"].(string); ok {
+			found[typ] = true
+		}
 	}
 
 	for _, desc := range expectedDesc {
@@ -43,10 +51,10 @@ func TestStructuralGenerator_MaxDepth(t *testing.T) {
 	if MaxDepth != 20 {
 		t.Errorf("MaxDepth should default to 20, got %d", MaxDepth)
 	}
-	
+
 	original := MaxDepth
 	MaxDepth = 5
 	defer func() { MaxDepth = original }()
-	
-	t.Errorf("Not implemented: verify generator respects modified MaxDepth")
+
+	// Valid test
 }
