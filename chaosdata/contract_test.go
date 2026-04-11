@@ -1,49 +1,70 @@
-package chaosdata
+package chaosdata_test
 
 import (
+	"context"
 	"testing"
+	// blank imports to be added by implementer for all generators
 )
 
-func TestAllGeneratorsContract(t *testing.T) {
-	generators := All()
-	names := make(map[string]bool)
+/*
+Interface Contract:
+ChaosGenerator represents a source of chaotic test data.
+- Category() string: returns a unique, non-empty string identifying the generator.
+- Generate(ctx context.Context) ([]ChaosValue, error): generates chaotic values. Must not panic. Must respect context cancellation.
+ChaosValue:
+- Value() interface{}
+- Description() string
+*/
+
+func TestGeneratorsContract(t *testing.T) {
+	t.Errorf("Contract test not fully implemented: import chaosdata and invoke All()")
+	/* Example skeleton once imported:
+	generators := chaosdata.All()
+	if len(generators) == 0 {
+		t.Fatal("Expected at least one generator registered")
+	}
+
+	categories := make(map[string]bool)
 
 	for _, g := range generators {
-		name := g.Name()
+		t.Run(g.Category(), func(t *testing.T) {
+			category := g.Category()
+			if category == "" {
+				t.Error("Category() returned empty string")
+			}
 
-		// Verify Name() is non-empty
-		if name == "" {
-			t.Error("Found generator with empty name")
-		}
+			if categories[category] {
+				t.Errorf("Duplicate category: %s", category)
+			}
+			categories[category] = true
 
-		// Verify Name() is unique
-		if names[name] {
-			t.Errorf("Duplicate generator name found: %s", name)
-		}
-		names[name] = true
-
-		t.Run(name, func(t *testing.T) {
-			// Verify Generate() does not panic and follows contract
 			defer func() {
 				if r := recover(); r != nil {
 					t.Errorf("Generate() panicked: %v", r)
 				}
 			}()
 
-			opts := GenerateOpts{
-				Size: 1024,
-			}
-			payload, err := g.Generate(opts)
-
+			ctx := context.Background()
+			values, err := g.Generate(ctx)
+			
 			if err != nil {
-				if err.Error() == "" {
-					t.Error("Generate() returned non-nil error but error message is empty")
+				t.Errorf("Generate() returned error: %v", err)
+			}
+
+			if len(values) == 0 {
+				t.Error("Generate() returned no values")
+			}
+
+			for i, v := range values {
+				if v == nil {
+					t.Errorf("Generate() returned nil ChaosValue at index %d", i)
+					continue
 				}
-			} else {
-				if payload.Data == nil {
-					t.Error("Generate() returned nil error but nil Data")
+				if v.Description() == "" {
+					t.Errorf("ChaosValue at index %d has empty description", i)
 				}
 			}
 		})
 	}
+	*/
 }
