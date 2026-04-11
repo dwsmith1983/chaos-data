@@ -14,26 +14,42 @@ import (
 
 // runEngine is the actual engine runner implementation reading from stdin
 func runEngine(cmd *cobra.Command, args []string) error {
-	timeout, _ := cmd.Flags().GetDuration("timeout")
-	generatorName, _ := cmd.Flags().GetString("generator")
-	format, _ := cmd.Flags().GetString("format")
+	timeout, err := cmd.Flags().GetDuration("timeout")
+	if err != nil {
+		return fmt.Errorf("reading --timeout flag: %w", err)
+	}
+	generatorName, err := cmd.Flags().GetString("generator")
+	if err != nil {
+		return fmt.Errorf("reading --generator flag: %w", err)
+	}
+	format, err := cmd.Flags().GetString("format")
+	if err != nil {
+		return fmt.Errorf("reading --format flag: %w", err)
+	}
 
-	_, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	// Read stdin
 	var input []byte
-	if stat, _ := os.Stdin.Stat(); (stat.Mode() & os.ModeCharDevice) == 0 {
-		input, _ = io.ReadAll(os.Stdin)
+	if stat, statErr := os.Stdin.Stat(); statErr == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
+		var readErr error
+		input, readErr = io.ReadAll(os.Stdin)
+		if readErr != nil {
+			return fmt.Errorf("reading stdin: %w", readErr)
+		}
 	}
 
 	var results []map[string]interface{}
 
 	if generatorName == "all" {
 		for _, g := range chaosdata.All() {
-			p, err := g.Generate(chaosdata.GenerateOpts{Count: 1})
-			if err != nil {
-				return err
+			if err := ctx.Err(); err != nil {
+				return fmt.Errorf("timeout exceeded: %w", err)
+			}
+			p, genErr := g.Generate(chaosdata.GenerateOpts{Count: 1})
+			if genErr != nil {
+				return genErr
 			}
 			res := map[string]interface{}{
 				"generator": g.Name(),
@@ -48,9 +64,9 @@ func runEngine(cmd *cobra.Command, args []string) error {
 		found := false
 		for _, g := range chaosdata.All() {
 			if g.Name() == generatorName || g.Category() == generatorName {
-				p, err := g.Generate(chaosdata.GenerateOpts{Count: 1})
-				if err != nil {
-					return err
+				p, genErr := g.Generate(chaosdata.GenerateOpts{Count: 1})
+				if genErr != nil {
+					return genErr
 				}
 				res := map[string]interface{}{
 					"generator": g.Name(),
@@ -70,7 +86,10 @@ func runEngine(cmd *cobra.Command, args []string) error {
 	}
 
 	if format == "json" {
-		b, _ := json.Marshal(results)
+		b, marshalErr := json.Marshal(results)
+		if marshalErr != nil {
+			return fmt.Errorf("marshalling results: %w", marshalErr)
+		}
 		fmt.Fprintln(cmd.OutOrStdout(), string(b))
 	} else {
 		for _, r := range results {

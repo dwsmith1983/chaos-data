@@ -22,37 +22,39 @@ import (
 func TestGeneratorsContract(t *testing.T) {
 	generators := chaosdata.All()
 
-	// Verify at least 13 generators are registered (one for each package imported)
-	// The plan mentioned 14, let's see how many we actually get.
-	if len(generators) < 13 {
-		t.Errorf("Expected at least 13 generators, got %d", len(generators))
+	const minGenerators = 14
+	if len(generators) < minGenerators {
+		t.Fatalf("Expected at least %d generators, got %d", minGenerators, len(generators))
 	}
 
-	names := make(map[string]bool)
-	for _, g := range generators {
+	// Verify all names are unique before running per-generator subtests.
+	seen := make(map[string]int)
+	for i, g := range generators {
 		name := g.Name()
-		category := g.Category()
+		if prev, ok := seen[name]; ok {
+			t.Errorf("Duplicate generator name %q: index %d and %d", name, prev, i)
+		}
+		seen[name] = i
+	}
 
-		t.Run(name, func(t *testing.T) {
-			if name == "" {
-				t.Error("Generator name should not be empty")
+	for _, g := range generators {
+		t.Run(g.Name(), func(t *testing.T) {
+			if g.Name() == "" {
+				t.Error("Name() must not be empty")
 			}
-			if category == "" {
-				t.Error("Generator category should not be empty")
+			if g.Category() == "" {
+				t.Error("Category() must not be empty")
 			}
 
-			if names[name] {
-				t.Errorf("Duplicate generator name: %s", name)
-			}
-			names[name] = true
-
-			// Test Generate
 			payload, err := g.Generate(chaosdata.GenerateOpts{Count: 1})
 			if err != nil {
-				t.Errorf("Generate failed: %v", err)
+				t.Fatalf("Generate(Count:1) returned error: %v", err)
 			}
 			if len(payload.Data) == 0 {
-				t.Error("Generate returned empty payload data")
+				t.Error("Generate(Count:1) returned empty Data")
+			}
+			if payload.Type == "" {
+				t.Error("Generate(Count:1) returned empty Type")
 			}
 		})
 	}

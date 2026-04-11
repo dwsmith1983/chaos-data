@@ -7,8 +7,6 @@ import (
 	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
-var MaxDepth = 20
-
 type StructuralGenerator struct{}
 
 func (StructuralGenerator) Name() string {

@@ -47,14 +47,3 @@ func TestStructuralGenerator_Generate(t *testing.T) {
 	}
 }
 
-func TestStructuralGenerator_MaxDepth(t *testing.T) {
-	if MaxDepth != 20 {
-		t.Errorf("MaxDepth should default to 20, got %d", MaxDepth)
-	}
-
-	original := MaxDepth
-	MaxDepth = 5
-	defer func() { MaxDepth = original }()
-
-	// Valid test
-}
