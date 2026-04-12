@@ -1,70 +1,131 @@
-// Package nulls provides chaos data generators for null/absence scenarios.
-// Each generator produces raw []byte JSON payloads exercising different ways
-// null or absence can manifest in structured data.
-//
-// All generators are registered in the package-level Registry via init().
 package nulls
 
 import (
 	"encoding/json"
 	"fmt"
-	"sync"
+
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
-// Generator is a function that produces a raw JSON payload as []byte.
-type Generator func() []byte
+// NullsGenerator produces chaos data payloads for null/absence scenarios.
+type NullsGenerator struct{}
 
-// registry holds all named null-chaos generators.
-type registry struct {
-	mu         sync.RWMutex
-	generators map[string]Generator
+func (NullsGenerator) Name() string {
+	return "nulls"
 }
 
-// Register adds a named generator to the registry.
-// It panics on duplicate names to catch misconfiguration at startup.
-func (r *registry) Register(name string, g Generator) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (NullsGenerator) Category() string {
+	return "nulls"
+}
 
-	if _, exists := r.generators[name]; exists {
-		panic(fmt.Sprintf("nulls: generator already registered: %s", name))
+func (g NullsGenerator) Generate(opts chaosdata.GenerateOpts) (chaosdata.Payload, error) {
+	records := []map[string]interface{}{}
+
+	// Basic null variants
+	records = append(records, map[string]interface{}{"type": "nil", "value": nil})
+	records = append(records, map[string]interface{}{"type": "empty string", "value": ""})
+	records = append(records, map[string]interface{}{"type": "zero-length slice", "value": []interface{}{}})
+	records = append(records, map[string]interface{}{"type": "zero-length map", "value": map[string]interface{}{}})
+	records = append(records, map[string]interface{}{"type": "string literal null", "value": "null"})
+	records = append(records, map[string]interface{}{"type": "string literal NULL", "value": "NULL"})
+	records = append(records, map[string]interface{}{"type": "string literal nil", "value": "nil"})
+	records = append(records, map[string]interface{}{"type": "string literal None", "value": "None"})
+	records = append(records, map[string]interface{}{"type": "string literal undefined", "value": "undefined"})
+	records = append(records, map[string]interface{}{"type": "Unicode null", "value": "\u0000"})
+	records = append(records, map[string]interface{}{"type": "null byte in middle of string", "value": "a\x00b"})
+	records = append(records, map[string]interface{}{
+		"type":  "sql.NullString Valid=false",
+		"value": map[string]interface{}{"String": "", "Valid": false},
+	})
+
+	// Nested null variants
+	records = append(records, map[string]interface{}{
+		"type":  "nested object with null field",
+		"value": map[string]interface{}{"child": nil},
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "doubly-nested null",
+		"value": map[string]interface{}{"child": map[string]interface{}{"grandchild": nil}},
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "triply-nested null",
+		"value": map[string]interface{}{
+			"child": map[string]interface{}{
+				"grandchild": map[string]interface{}{"great_grandchild": nil},
+			},
+		},
+	})
+	records = append(records, map[string]interface{}{
+		"type": "mixed null branches",
+		"value": map[string]interface{}{
+			"null_branch":  nil,
+			"value_branch": map[string]interface{}{"leaf": nil},
+		},
+	})
+
+	// Array null variants
+	records = append(records, map[string]interface{}{
+		"type":  "array with null elements",
+		"value": []interface{}{1, nil, 2, nil, 3},
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "array of all nulls",
+		"value": []interface{}{nil, nil, nil},
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "mixed types with null",
+		"value": []interface{}{"string", 42, true, nil, map[string]interface{}{"key": "value"}},
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "single null element array",
+		"value": []interface{}{nil},
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "empty array",
+		"value": []interface{}{},
+	})
+
+	// Sparse null array
+	sparseArray := []interface{}{0, 1, nil, 3, nil, 5, 6, nil, 8, nil}
+	records = append(records, map[string]interface{}{
+		"type":  "sparse nulls in array",
+		"value": sparseArray,
+	})
+
+	count := opts.Count
+	if count < 1 {
+		count = 1
 	}
-	r.generators[name] = g
-}
 
-// Get returns the named generator and whether it was found.
-func (r *registry) Get(name string) (Generator, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	g, ok := r.generators[name]
-	return g, ok
-}
-
-// Names returns all registered generator names in insertion order is not
-// guaranteed; callers should sort if deterministic order is needed.
-func (r *registry) Names() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	names := make([]string, 0, len(r.generators))
-	for n := range r.generators {
-		names = append(names, n)
+	all := make([]map[string]interface{}, 0, len(records)*count)
+	for i := 0; i < count; i++ {
+		all = append(all, records...)
 	}
-	return names
-}
 
-// Registry is the package-level registry populated by init().
-var Registry = &registry{
-	generators: make(map[string]Generator),
+	data, err := json.Marshal(all)
+	if err != nil {
+		return chaosdata.Payload{}, fmt.Errorf("nulls: marshal payload: %w", err)
+	}
+
+	return chaosdata.Payload{
+		Data: data,
+		Type: "application/json",
+		Attributes: map[string]string{
+			"generator": g.Name(),
+			"category":  g.Category(),
+			"records":   fmt.Sprintf("%d", len(all)),
+		},
+	}, nil
 }
 
 func init() {
-	Registry.Register("null-variants", NullVariants)
-	Registry.Register("nested-nulls", NestedNulls)
-	Registry.Register("array-nulls", ArrayNulls)
+	chaosdata.Register(NullsGenerator{})
 }
 
+// Helper functions for low-level testing
+
 // mustMarshal marshals v to JSON and panics on error.
-// All inputs to mustMarshal are constructed internally and are always valid.
+// All inputs are constructed internally and are always valid.
 func mustMarshal(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -74,16 +135,7 @@ func mustMarshal(v any) []byte {
 }
 
 // NullVariants returns a JSON array of objects that each exercise a distinct
-// way null or absence can appear in a JSON payload:
-//
-//   - literal null value         {"field": null}
-//   - empty string               {"field": ""}
-//   - string "null"              {"field": "null"}
-//   - string "NULL"              {"field": "NULL"}
-//   - string "None"              {"field": "None"}
-//   - string "nil"               {"field": "nil"}
-//   - missing key                {}
-//   - explicit null vs absent    {"present": null}  alongside  {"present": "value"}
+// way null or absence can appear in a JSON payload.
 func NullVariants() []byte {
 	type record = map[string]any
 
@@ -102,13 +154,7 @@ func NullVariants() []byte {
 }
 
 // NestedNulls returns a JSON object with null values embedded at multiple
-// depths of nesting.  The structure exercises:
-//
-//   - depth-1: top-level null field
-//   - depth-2: null inside a nested object
-//   - depth-3: null inside a doubly-nested object
-//   - depth-4: null inside a triply-nested object
-//   - mixed:   a branch that is itself null alongside a branch with a null leaf
+// depths of nesting.
 func NestedNulls() []byte {
 	payload := map[string]any{
 		"depth1": nil,
@@ -136,14 +182,7 @@ func NestedNulls() []byte {
 }
 
 // ArrayNulls returns a JSON object containing multiple array fields that
-// exercise null semantics inside arrays:
-//
-//   - null_elements:   array where some elements are null, some are not
-//   - all_null:        array whose every element is null
-//   - mixed_types:     array with string, number, bool, null, and object elements
-//   - sparse_nulls:    a longer array with nulls scattered at various indices
-//   - single_null:     array with exactly one element which is null
-//   - empty:           empty array (absence of any element)
+// exercise null semantics inside arrays.
 func ArrayNulls() []byte {
 	payload := map[string]any{
 		"null_elements": []any{1, nil, 2, nil, 3},
@@ -163,15 +202,10 @@ func buildSparseArray(n int, nullAt ...int) []any {
 	for i := range arr {
 		arr[i] = i
 	}
-	nullSet := make(map[int]struct{}, len(nullAt))
-	for _, idx := range nullAt {
-		nullSet[idx] = struct{}{}
-	}
 	for _, idx := range nullAt {
 		if idx >= 0 && idx < n {
 			arr[idx] = nil
 		}
 	}
-	_ = nullSet
 	return arr
 }

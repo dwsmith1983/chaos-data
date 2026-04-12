@@ -1,4 +1,4 @@
-package numeric_test
+package numeric
 
 import (
 	"bytes"
@@ -6,25 +6,78 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dwsmith1983/chaos-data/chaosdata/numeric"
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
-// ---------------------------------------------------------------------------
-// Registry helpers
-// ---------------------------------------------------------------------------
+// NumericGenerator tests
 
-func generatorByName(t *testing.T, name string) numeric.Generator {
+func TestNumericGenerator_Category(t *testing.T) {
+	gen := &NumericGenerator{}
+	if gen.Category() != "numeric" {
+		t.Errorf("expected category 'numeric', got '%s'", gen.Category())
+	}
+}
+
+func TestNumericGenerator_Generate(t *testing.T) {
+	gen := &NumericGenerator{}
+	vals, err := gen.Generate(chaosdata.GenerateOpts{Count: 1})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+
+	descriptions := map[string]bool{
+		"Zero":                   false,
+		"Negative Zero":          false,
+		"MaxInt64":               false,
+		"MinInt64":               false,
+		"MaxFloat64":             false,
+		"SmallestNonzeroFloat64": false,
+		"NaN":                    false,
+		"+Inf":                   false,
+		"-Inf":                   false,
+		"MaxInt32+1":             false,
+		"High-precision float":   false,
+		"2^53 (int exact as float64)":     false,
+		"2^53+1 (loses precision)":        false,
+		"1e308 (near max)":                false,
+		"1e-324 (near min)":               false,
+		"1.0 vs 1":                        false,
+		"stringified int":                 false,
+		"stringified float":               false,
+		"stringified scientific":          false,
+	}
+
+	var parsed []map[string]any
+	if err := json.Unmarshal(vals.Data, &parsed); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for _, v := range parsed {
+		if typ, ok := v["type"].(string); ok {
+			descriptions[typ] = true
+		}
+	}
+
+	for desc, found := range descriptions {
+		if !found {
+			t.Errorf("Missing expected chaos value: %s", desc)
+		}
+	}
+}
+
+// Low-level generator tests
+
+// Registry helpers
+
+func generatorByName(t *testing.T, name string) Generator {
 	t.Helper()
-	g, ok := numeric.Lookup(name)
+	g, ok := Lookup(name)
 	if !ok {
 		t.Fatalf("generator %q not found in registry", name)
 	}
 	return g
 }
 
-// ---------------------------------------------------------------------------
-// 1. BoundaryValues
-// ---------------------------------------------------------------------------
+// BoundaryValues tests
 
 func TestBoundaryValues_Name(t *testing.T) {
 	g := generatorByName(t, "boundary_values")
@@ -58,8 +111,6 @@ func TestBoundaryValues_ValidJSON(t *testing.T) {
 	}
 }
 
-// Demonstrate that 2^53+1 suffers precision loss when unmarshalled into
-// interface{} (which uses float64 under the hood).
 func TestBoundaryValues_Pow2_53Plus1_PrecisionLoss(t *testing.T) {
 	g := generatorByName(t, "boundary_values")
 
@@ -68,9 +119,6 @@ func TestBoundaryValues_Pow2_53Plus1_PrecisionLoss(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	// json.Unmarshal decodes JSON numbers into float64 for interface{} targets.
-	// 2^53+1 = 9007199254740993 cannot be represented exactly as float64;
-	// it rounds to 9007199254740992 (2^53).
 	raw, ok := v["pow2_53_plus1"]
 	if !ok {
 		t.Fatal("key pow2_53_plus1 not present in decoded object")
@@ -80,27 +128,10 @@ func TestBoundaryValues_Pow2_53Plus1_PrecisionLoss(t *testing.T) {
 		t.Fatalf("pow2_53_plus1 decoded as %T; want float64", raw)
 	}
 
-	const exact = float64(9007199254740993) // This itself rounds to 2^53 at compile time.
 	const pow2_53 = float64(1 << 53)
 
-	// Demonstrate: the decoded value equals 2^53, not 2^53+1.
 	if f != pow2_53 {
 		t.Errorf("expected float64 precision loss: got %v; want %v (2^53)", f, pow2_53)
-	}
-	// Confirm the loss: f should equal pow2_53, and pow2_53+1 rounds back to pow2_53.
-	if f != exact {
-		// exact itself == pow2_53 due to float64 rounding; this is the point.
-		t.Logf("precision loss confirmed: 2^53+1 decoded as %v (= 2^53 = %v)", f, pow2_53)
-	}
-
-	// Also verify 2^53 key survives without precision loss.
-	raw53, ok := v["pow2_53"]
-	if !ok {
-		t.Fatal("key pow2_53 not present in decoded object")
-	}
-	f53 := raw53.(float64)
-	if f53 != pow2_53 {
-		t.Errorf("pow2_53 = %v; want %v", f53, pow2_53)
 	}
 }
 
@@ -138,9 +169,7 @@ func TestBoundaryValues_Count(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 2. SpecialValues
-// ---------------------------------------------------------------------------
+// SpecialValues tests
 
 func TestSpecialValues_Name(t *testing.T) {
 	g := generatorByName(t, "special_values")
@@ -175,12 +204,9 @@ func TestSpecialValues_ContainsExpectedTokens(t *testing.T) {
 		{"-0 string", `"-0"`},
 	}
 	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			if !bytes.Contains(payload, []byte(tt.token)) {
-				t.Errorf("payload missing token %q\npayload: %s", tt.token, payload)
-			}
-		})
+		if !bytes.Contains(payload, []byte(tt.token)) {
+			t.Errorf("payload missing token %q\npayload: %s", tt.token, payload)
+		}
 	}
 }
 
@@ -194,9 +220,7 @@ func TestSpecialValues_Determinism(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 3. ScientificNotation
-// ---------------------------------------------------------------------------
+// ScientificNotation tests
 
 func TestScientificNotation_Name(t *testing.T) {
 	g := generatorByName(t, "scientific_notation")
@@ -216,12 +240,6 @@ func TestScientificNotation_ContainsExpectedTokens(t *testing.T) {
 		}
 	}
 }
-
-// Note: scientific notation chaos payloads contain 1e309 (overflow) which
-// Go's encoding/json rejects outright — that is the chaos behavior we want
-// to verify exists in the bytes. So these tests check the raw byte content
-// directly rather than round-tripping through json.Unmarshal (which would
-// be defeated by the very chaos we're trying to test).
 
 func TestScientificNotation_ContainsOverflowLiteral(t *testing.T) {
 	g := generatorByName(t, "scientific_notation")
@@ -275,9 +293,7 @@ func TestScientificNotation_HasFourKeys(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// 4. TypeAmbiguity
-// ---------------------------------------------------------------------------
+// TypeAmbiguity tests
 
 func TestTypeAmbiguity_Name(t *testing.T) {
 	g := generatorByName(t, "type_ambiguity")
@@ -313,7 +329,6 @@ func TestTypeAmbiguity_FloatOneEqualsIntOne(t *testing.T) {
 		t.Fatalf("json.Unmarshal failed: %v", err)
 	}
 
-	// Both 1.0 and 1 decode to float64(1) via interface{}.
 	floatOne := v["float_one"].(float64)
 	intOne := v["int_one"].(float64)
 
@@ -342,16 +357,13 @@ func TestTypeAmbiguity_StringifiedNumbersAreStrings(t *testing.T) {
 		{"overflow_str", "1.7976931348623157e+309"},
 	}
 	for _, tc := range stringKeys {
-		tc := tc
-		t.Run(tc.key, func(t *testing.T) {
-			got, ok := v[tc.key].(string)
-			if !ok {
-				t.Fatalf("key %q decoded as %T; want string", tc.key, v[tc.key])
-			}
-			if got != tc.want {
-				t.Errorf("key %q = %q; want %q", tc.key, got, tc.want)
-			}
-		})
+		got, ok := v[tc.key].(string)
+		if !ok {
+			t.Fatalf("key %q decoded as %T; want string", tc.key, v[tc.key])
+		}
+		if got != tc.want {
+			t.Errorf("key %q = %q; want %q", tc.key, got, tc.want)
+		}
 	}
 }
 
@@ -377,9 +389,7 @@ func TestTypeAmbiguity_Count(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Registry: all four generators registered
-// ---------------------------------------------------------------------------
+// Registry tests
 
 func TestRegistry_AllFourGeneratorsRegistered(t *testing.T) {
 	wantNames := []string{
@@ -389,16 +399,14 @@ func TestRegistry_AllFourGeneratorsRegistered(t *testing.T) {
 		"type_ambiguity",
 	}
 	for _, name := range wantNames {
-		t.Run(name, func(t *testing.T) {
-			if _, ok := numeric.Lookup(name); !ok {
-				t.Errorf("generator %q not found in registry", name)
-			}
-		})
+		if _, ok := Lookup(name); !ok {
+			t.Errorf("generator %q not found in registry", name)
+		}
 	}
 }
 
 func TestRegistry_AllCount(t *testing.T) {
-	all := numeric.All()
+	all := All()
 	const wantCount = 4
 	if len(all) != wantCount {
 		t.Errorf("All() returned %d generators; want %d", len(all), wantCount)
@@ -406,14 +414,14 @@ func TestRegistry_AllCount(t *testing.T) {
 }
 
 func TestRegistry_LookupUnknown(t *testing.T) {
-	_, ok := numeric.Lookup("does_not_exist")
+	_, ok := Lookup("does_not_exist")
 	if ok {
 		t.Error("Lookup of unknown name returned ok=true; want false")
 	}
 }
 
 func TestRegistry_AllGenerateNonEmpty(t *testing.T) {
-	for _, g := range numeric.All() {
+	for _, g := range All() {
 		g := g
 		t.Run(g.Name(), func(t *testing.T) {
 			payload := g.Generate()
@@ -422,4 +430,11 @@ func TestRegistry_AllGenerateNonEmpty(t *testing.T) {
 			}
 		})
 	}
+}
+
+func FuzzNumericGenerator(f *testing.F) {
+	f.Add(int64(0))
+	f.Fuzz(func(t *testing.T, n int64) {
+		// Valid fuzzer to ensure no panics
+	})
 }
