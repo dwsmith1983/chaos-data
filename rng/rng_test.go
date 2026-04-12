@@ -1,12 +1,11 @@
 package rng
 
 import (
-	"math/rand/v2"
 	"testing"
 )
 
 func TestNew_Determinism(t *testing.T) {
-	seed := int64(12345)
+	seed := int64(42)
 	r1 := New(seed)
 	r2 := New(seed)
 
@@ -14,90 +13,97 @@ func TestNew_Determinism(t *testing.T) {
 		v1 := r1.Uint64()
 		v2 := r2.Uint64()
 		if v1 != v2 {
-			t.Fatalf("Non-deterministic sequence at index %d: %d != %d", i, v1, v2)
+			t.Fatalf("PRNGs with same seed produced different values at index %d: %d != %d", i, v1, v2)
 		}
-	}
-}
-
-func TestDeriveChild_Distinct(t *testing.T) {
-	parent := New(98765)
-	c1 := DeriveChild(parent)
-	c2 := DeriveChild(parent)
-
-	// Since DeriveChild consumes from parent, c1 and c2 should have different seeds
-	v1 := c1.Uint64()
-	v2 := c2.Uint64()
-	if v1 == v2 {
-		t.Errorf("DeriveChild produced identical children: %d == %d", v1, v2)
 	}
 }
 
 func TestDeriveChild_Determinism(t *testing.T) {
-	// Generating children from identical parents should yield identical children
-	p1 := New(42)
-	p2 := New(42)
+	seed := int64(123)
+	parent1 := New(seed)
+	parent2 := New(seed)
 
-	c1 := DeriveChild(p1)
-	c2 := DeriveChild(p2)
+	child1 := DeriveChild(parent1)
+	child2 := DeriveChild(parent2)
 
 	for i := 0; i < 100; i++ {
-		v1 := c1.Uint64()
-		v2 := c2.Uint64()
+		v1 := child1.Uint64()
+		v2 := child2.Uint64()
 		if v1 != v2 {
-			t.Fatalf("Derived children are not deterministic at index %d: %d != %d", i, v1, v2)
+			t.Fatalf("Derived children with same parent state produced different values at index %d: %d != %d", i, v1, v2)
 		}
 	}
 }
 
-func TestIsolation(t *testing.T) {
-	// Using one child should not affect the sequence of another child
-	parent := New(777)
-	c1 := DeriveChild(parent)
-	c2 := DeriveChild(parent)
+func TestDeriveChild_DistinctChildren(t *testing.T) {
+	parent := New(99)
+	child1 := DeriveChild(parent)
+	child2 := DeriveChild(parent)
 
-	// Save first value of c2
-	expectedV2 := c2.Uint64()
-
-	// Reset and do it again, but use c1 in between
-	parent2 := New(777)
-	c1_2 := DeriveChild(parent2)
-	c2_2 := DeriveChild(parent2)
-
-	// Use c1_2 extensively
-	for i := 0; i < 1000; i++ {
-		c1_2.Uint64()
+	// Since child1 and child2 are derived sequentially from the same parent,
+	// they should have different seeds and thus different sequences.
+	different := false
+	for i := 0; i < 10; i++ {
+		if child1.Uint64() != child2.Uint64() {
+			different = true
+			break
+		}
 	}
-
-	// c2_2 should still produce the same first value
-	actualV2 := c2_2.Uint64()
-
-	if actualV2 != expectedV2 {
-		t.Errorf("Child isolation failed: usage of c1 affected c2. Expected %d, got %d", expectedV2, actualV2)
+	if !different {
+		t.Error("Derived children produced identical sequences")
 	}
 }
 
-func TestDeriveChild_ParentIndependence(t *testing.T) {
-	// Further usage of parent should not affect already derived children
-	parent := New(888)
-	child := DeriveChild(parent)
-
-	expectedChildVal := child.Uint64()
-
-	// Use parent
-	for i := 0; i < 100; i++ {
-		parent.Uint64()
-	}
-
-	// Reset and re-derive to check
-	parent2 := New(888)
-	child2 := DeriveChild(parent2)
+func TestDeriveChild_Isolation(t *testing.T) {
+	parent := New(100)
 	
-	// child2 should match child
-	if child2.Uint64() != expectedChildVal {
-		t.Fatal("Setup failure in test")
+	child1 := DeriveChild(parent)
+	child2 := DeriveChild(parent)
+	
+	// Record first value of child2
+	val2_orig := child2.Uint64()
+	
+	// Create another child2 from a fresh parent advanced to the same point
+	parentRef := New(100)
+	_ = DeriveChild(parentRef) // child1 derivation
+	child2_ref := DeriveChild(parentRef)
+	val2_ref := child2_ref.Uint64()
+	
+	if val2_orig != val2_ref {
+		t.Fatal("Setup failure: child2_ref does not match child2")
 	}
 
-	// The point is that 'child' was already derived.
-	// If I continue using 'child', it should be independent of 'parent'.
-	// This is naturally true in Go as they are different objects.
+	// Use child1 extensively
+	for i := 0; i < 100; i++ {
+		child1.Uint64()
+	}
+
+	// Verify child2 is unaffected
+	val2_post := child2.Uint64()
+	if val2_post != child2_ref.Uint64() {
+		t.Error("Usage of child1 affected child2 sequence")
+	}
+}
+
+func TestDeriveChild_ParentIsolation(t *testing.T) {
+    parent := New(101)
+    
+    // Derive a child
+    child := DeriveChild(parent)
+    
+    // Using child should not affect parent
+    parentValBefore := parent.Uint64()
+    _ = child.Uint64()
+    parentValAfter := parent.Uint64()
+    
+    // This is a bit tricky because parent.Uint64() advances parent.
+    // So we should compare parentValAfter with what it would be if child was not used.
+    
+    parent2 := New(101)
+    _ = DeriveChild(parent2)
+    expectedParentValAfter := parent2.Uint64()
+    
+    if parentValAfter != expectedParentValAfter {
+        t.Errorf("Usage of child affected parent sequence: %d != %d", parentValAfter, expectedParentValAfter)
+    }
 }
