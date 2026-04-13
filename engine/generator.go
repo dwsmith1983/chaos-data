@@ -1,9 +1,9 @@
 package engine
 
-// Record is a type alias for a map representing a data record.
+// Record represents a single data entry.
 type Record map[string]any
 
-// Generator defines the interface for generating data records.
+// Generator defines the interface for generating records.
 type Generator interface {
 	Next() (Record, error)
 }
