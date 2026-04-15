@@ -11,6 +11,7 @@ import (
 	_ "github.com/dwsmith1983/chaos-data/chaosdata/injection"
 	_ "github.com/dwsmith1983/chaos-data/chaosdata/nulls"
 	_ "github.com/dwsmith1983/chaos-data/chaosdata/numeric"
+	_ "github.com/dwsmith1983/chaos-data/chaosdata/profiles"
 	_ "github.com/dwsmith1983/chaos-data/chaosdata/protocol"
 	_ "github.com/dwsmith1983/chaos-data/chaosdata/referential"
 	_ "github.com/dwsmith1983/chaos-data/chaosdata/schemadrift"

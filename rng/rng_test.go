@@ -46,7 +46,7 @@ func TestIsolation(t *testing.T) {
 	child2 := DeriveChild(parent)
 	
 	// Sequence from child2 before child1 is used
-	v2_1 := child2.Uint64()
+	_ = child2.Uint64()
 	
 	// Use child1 extensively
 	for i := 0; i < 1000; i++ {
@@ -88,7 +88,7 @@ func TestParentIndependence(t *testing.T) {
 	child := DeriveChild(parent)
 	
 	// Record parent state
-	pv1 := parent.Uint64()
+	_ = parent.Uint64()
 	
 	// Use child
 	child.Uint64()
