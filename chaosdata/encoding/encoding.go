@@ -1,149 +1,190 @@
-// Package encoding provides chaos data generators that produce raw []byte
-// payloads containing encoding edge cases: invalid UTF-8 sequences, Unicode
-// homoglyphs, bidirectional override characters, and zero-width characters.
-//
-// All generators are registered via init() and are deterministic — identical
-// calls return byte-for-byte identical output.
 package encoding
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
-	"sort"
+
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
-// Generator is a function that produces a raw []byte chaos payload.
-type Generator func() []byte
+// EncodingGenerator produces chaos data payloads containing encoding edge cases:
+// invalid UTF-8 sequences, Unicode homoglyphs, bidirectional overrides, and
+// zero-width characters.
+type EncodingGenerator struct{}
 
-// registry holds all registered encoding generators keyed by name.
-var registry = map[string]Generator{}
-
-// Register adds a named Generator to the global registry.
-// Panics on duplicate name to catch wiring errors at startup.
-func Register(name string, g Generator) {
-	if _, exists := registry[name]; exists {
-		panic(fmt.Sprintf("encoding: duplicate generator registered: %q", name))
-	}
-	registry[name] = g
+func (EncodingGenerator) Name() string {
+	return "encoding"
 }
 
-// Get returns the Generator registered under name and a boolean indicating
-// whether it was found.
-func Get(name string) (Generator, bool) {
-	g, ok := registry[name]
-	return g, ok
+func (EncodingGenerator) Category() string {
+	return "encoding"
 }
 
-// Names returns the sorted list of registered generator names.
-func Names() []string {
-	names := make([]string, 0, len(registry))
-	for k := range registry {
-		names = append(names, k)
+func (g EncodingGenerator) Generate(opts chaosdata.GenerateOpts) (chaosdata.Payload, error) {
+	records := []map[string]interface{}{}
+
+	// Invalid UTF-8 sequences
+	records = append(records, map[string]interface{}{
+		"type": "Invalid UTF-8 byte sequences",
+		"value": string([]byte{0xff, 0xfe, 0xfd}),
+	})
+
+	// Surrogate half (invalid)
+	records = append(records, map[string]interface{}{
+		"type":  "UTF-8 surrogate half (U+D800)",
+		"value": string([]byte{0xED, 0xA0, 0x80}),
+	})
+
+	// Overlong encoding
+	records = append(records, map[string]interface{}{
+		"type":  "UTF-8 overlong NUL encoding",
+		"value": string([]byte{0xC0, 0x80}),
+	})
+
+	// Truncated sequence
+	records = append(records, map[string]interface{}{
+		"type":  "UTF-8 truncated 3-byte sequence",
+		"value": string([]byte{0xE2, 0x82}),
+	})
+
+	// BOM markers
+	records = append(records, map[string]interface{}{
+		"type":  "BOM markers (UTF-8)",
+		"value": "\xef\xbb\xbftext",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "BOM markers (UTF-16 LE)",
+		"value": "\xff\xfet\x00e\x00x\x00t\x00",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "BOM markers (UTF-16 BE)",
+		"value": "\xfe\xff\x00t\x00e\x00x\x00t",
+	})
+
+	// Homoglyphs
+	cyrillic_a := string([]byte{0xD0, 0xB0})
+	cyrillic_e := string([]byte{0xD0, 0xB5})
+	cyrillic_o := string([]byte{0xD0, 0xBE})
+	cyrillic_p := string([]byte{0xD1, 0x80})
+	cyrillic_c := string([]byte{0xD1, 0x81})
+
+	records = append(records, map[string]interface{}{
+		"type":  "Homoglyph - Cyrillic а (looks like Latin a)",
+		"value": cyrillic_a + "dmin",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Homoglyph - Visual example (Cyrillic homoglyphs)",
+		"value": cyrillic_e + "x" + cyrillic_a + "mpl" + cyrillic_e,
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Homoglyph - Cyrillic с о р (looks like core)",
+		"value": cyrillic_c + cyrillic_o + cyrillic_p + "e",
+	})
+
+	// Bidirectional override characters
+	bidi_rlo := string([]byte{0xE2, 0x80, 0xAE})
+	bidi_lro := string([]byte{0xE2, 0x80, 0xAD})
+	bidi_rlm := string([]byte{0xE2, 0x80, 0x8F})
+	bidi_pdf := string([]byte{0xE2, 0x80, 0xAC})
+
+	records = append(records, map[string]interface{}{
+		"type":  "Bidi override - RLO (renders as 'exe.txt')",
+		"value": bidi_rlo + "txt.exe" + bidi_pdf,
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Bidi override - RLM marker",
+		"value": "safe" + bidi_rlm + "// evil code",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Bidi override - LRO",
+		"value": bidi_lro + "normal" + bidi_pdf,
+	})
+
+	// Zero-width characters
+	zwsp := string([]byte{0xE2, 0x80, 0x8B})
+	zwnj := string([]byte{0xE2, 0x80, 0x8C})
+	zwj := string([]byte{0xE2, 0x80, 0x8D})
+	zwnbs := string([]byte{0xEF, 0xBB, 0xBF})
+
+	records = append(records, map[string]interface{}{
+		"type":  "Zero-width ZWSP (invisible space)",
+		"value": "user" + zwsp + "name",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Zero-width ZWJ (joiner)",
+		"value": "pass" + zwj + "word",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Zero-width ZWNJ (non-joiner)",
+		"value": "secret" + zwnj + "!",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Zero-width BOM at start",
+		"value": zwnbs + "abc" + zwsp,
+	})
+
+	// Additional encoding edge cases
+	records = append(records, map[string]interface{}{
+		"type":  "mixed encoding strings",
+		"value": "utf8-and-\xff\xfe-utf16",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "Base64 padding edge cases",
+		"value": "YWJjZA==",
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "JSON snippet resembling encoding",
+		"value": `{"encoding": "utf-8"}`,
+	})
+	records = append(records, map[string]interface{}{
+		"type":  "XML snippet resembling encoding",
+		"value": `<?xml version="1.0" encoding="ISO-8859-1"?>`,
+	})
+
+	count := opts.Count
+	if count < 1 {
+		count = 1
 	}
-	sort.Strings(names)
-	return names
+
+	all := make([]map[string]interface{}, 0, len(records)*count)
+	for i := 0; i < count; i++ {
+		all = append(all, records...)
+	}
+
+	data, err := json.Marshal(all)
+	if err != nil {
+		return chaosdata.Payload{}, fmt.Errorf("encoding: marshal payload: %w", err)
+	}
+
+	return chaosdata.Payload{
+		Data: data,
+		Type: "application/json",
+		Attributes: map[string]string{
+			"generator": g.Name(),
+			"category":  g.Category(),
+			"records":   fmt.Sprintf("%d", len(all)),
+		},
+	}, nil
 }
 
 func init() {
-	Register("InvalidUTF8", InvalidUTF8)
-	Register("HomoglyphStrings", HomoglyphStrings)
-	Register("BidiOverride", BidiOverride)
-	Register("ZeroWidthChars", ZeroWidthChars)
+	chaosdata.Register(EncodingGenerator{})
 }
 
-// ---------------------------------------------------------------------------
-// InvalidUTF8
-// ---------------------------------------------------------------------------
-//
-// Produces a JSON object whose string values embed raw invalid UTF-8 byte
-// sequences.  Three distinct invalid sequences are included at deterministic
-// offsets so test code can assert on exact byte positions.
-//
-// Layout (bytes):
-//
-//	[0-12]  {"surrogate":          (13 bytes)
-//	[13-15] 0xED 0xA0 0x80         surrogate half U+D800 — invalid in UTF-8
-//	[16-24] abcdefghi              valid filler (9 bytes)
-//	[25-25] "                      close surrogate value
-//	[26-26] ,
-//	[27-37] "overlong":            (11 bytes)
-//	[38-39] 0xC0 0x80              overlong NUL encoding — invalid in UTF-8
-//	[40-45] ZZZZZZ                 valid filler (6 bytes)
-//	[46-46] "                      close overlong value
-//	[47-47] ,
-//	[48-59] "truncated":           (12 bytes)
-//	[60-61] 0xE2 0x82              truncated 3-byte sequence — invalid UTF-8
-//	[62-62] "                      close truncated value
-//	[63-63] }
+// Helper constants and functions for low-level byte testing
 
 // InvalidUTF8SurrogateOffset is the byte offset of the first invalid byte
-// (surrogate-half sequence 0xED 0xA0 0x80) in the payload returned by
-// InvalidUTF8.
+// (surrogate-half sequence 0xED 0xA0 0x80) in a payload containing invalid UTF-8.
 const InvalidUTF8SurrogateOffset = 13
 
 // InvalidUTF8OverlongOffset is the byte offset of the first invalid byte in
-// the overlong NUL sequence (0xC0 0x80) embedded in the InvalidUTF8 payload.
+// the overlong NUL sequence (0xC0 0x80).
 const InvalidUTF8OverlongOffset = 38
 
 // InvalidUTF8TruncatedOffset is the byte offset of the first invalid byte in
-// the truncated three-byte sequence (0xE2 0x82) embedded in the InvalidUTF8
-// payload.
+// the truncated three-byte sequence (0xE2 0x82).
 const InvalidUTF8TruncatedOffset = 60
-
-// InvalidUTF8 returns a JSON payload that embeds three categories of invalid
-// UTF-8 byte sequences at the offsets declared by the Offset constants above.
-// The payload is assembled with explicit byte splices; offsets are stable
-// regardless of Go version or platform.
-func InvalidUTF8() []byte {
-	var buf bytes.Buffer
-
-	// Bytes 0-12: key prefix (13 bytes) → invalid bytes start at offset 13.
-	buf.WriteString(`{"surrogate":`) // 13 bytes
-	// Bytes 13-15: surrogate half — 0xED 0xA0 0x80 (U+D800, invalid UTF-8).
-	buf.Write([]byte{0xED, 0xA0, 0x80})
-	// Bytes 16-24: valid ASCII filler inside surrogate value (9 bytes).
-	buf.WriteString(`abcdefghi`)
-	// Byte 25: close surrogate value quote.
-	buf.WriteByte('"')
-	// Byte 26: comma.
-	buf.WriteByte(',')
-	// Bytes 27-37: "overlong": (11 bytes) → invalid bytes start at offset 38.
-	buf.WriteString(`"overlong":`)
-	// Bytes 38-39: overlong NUL — 0xC0 0x80 (U+0000 encoded with 2 bytes, invalid).
-	buf.Write([]byte{0xC0, 0x80})
-	// Bytes 40-45: valid ASCII filler inside overlong value (6 bytes).
-	buf.WriteString(`ZZZZZZ`)
-	// Byte 46: close overlong value quote.
-	buf.WriteByte('"')
-	// Byte 47: comma.
-	buf.WriteByte(',')
-	// Bytes 48-59: "truncated": (12 bytes) → invalid bytes start at offset 60.
-	buf.WriteString(`"truncated":`)
-	// Bytes 60-61: truncated 3-byte sequence — 0xE2 0x82 with no trailing byte.
-	buf.Write([]byte{0xE2, 0x82})
-	// Byte 62: close truncated value quote.
-	buf.WriteByte('"')
-	// Byte 63: close object.
-	buf.WriteByte('}')
-
-	return buf.Bytes()
-}
-
-// ---------------------------------------------------------------------------
-// HomoglyphStrings
-// ---------------------------------------------------------------------------
-//
-// Produces a JSON payload where string values contain Unicode characters that
-// are visually identical (or near-identical) to their ASCII counterparts but
-// map to different code points.  All substitutions use the Cyrillic block.
-//
-// Homoglyph substitutions:
-//
-//	Latin a (U+0061) → Cyrillic а (U+0430)  UTF-8: 0xD0 0xB0
-//	Latin e (U+0065) → Cyrillic е (U+0435)  UTF-8: 0xD0 0xB5
-//	Latin o (U+006F) → Cyrillic о (U+043E)  UTF-8: 0xD0 0xBE
-//	Latin p (U+0070) → Cyrillic р (U+0440)  UTF-8: 0xD1 0x80
-//	Latin c (U+0063) → Cyrillic с (U+0441)  UTF-8: 0xD1 0x81
 
 // HomoglyphCyrillicA is the UTF-8 encoding of Cyrillic а (U+0430),
 // a visual homoglyph of Latin a (U+0061).
@@ -165,58 +206,6 @@ var HomoglyphCyrillicP = []byte{0xD1, 0x80}
 // a visual homoglyph of Latin c (U+0063).
 var HomoglyphCyrillicC = []byte{0xD1, 0x81}
 
-// HomoglyphStrings returns a JSON payload where string values embed Cyrillic
-// homoglyphs of common Latin letters.
-//
-// Fields produced:
-//
-//	"username": "<а>dmin"               leading 'a' is Cyrillic U+0430
-//	"domain":   "<е>x<а>mpl<е>"        е(U+0435) x а(U+0430) m p l е(U+0435)
-//	"service":  "<с><о><р>e"           с(U+0441) о(U+043E) р(U+0440) e
-func HomoglyphStrings() []byte {
-	var buf bytes.Buffer
-
-	// "username": Cyrillic а followed by ASCII "dmin"
-	buf.WriteString(`{"username":"`)
-	buf.Write(HomoglyphCyrillicA) // U+0430 — looks like Latin 'a'
-	buf.WriteString(`dmin"`)
-
-	// "domain": visually "example" but with Cyrillic homoglyphs
-	buf.WriteString(`,"domain":"`)
-	buf.Write(HomoglyphCyrillicE) // U+0435 — looks like 'e'
-	buf.WriteString(`x`)
-	buf.Write(HomoglyphCyrillicA) // U+0430 — looks like 'a'
-	buf.WriteString(`mpl`)
-	buf.Write(HomoglyphCyrillicE) // U+0435 — looks like 'e'
-	buf.WriteByte('"')
-
-	// "service": visually "core" but с о р are Cyrillic
-	buf.WriteString(`,"service":"`)
-	buf.Write(HomoglyphCyrillicC) // U+0441 — looks like 'c'
-	buf.Write(HomoglyphCyrillicO) // U+043E — looks like 'o'
-	buf.Write(HomoglyphCyrillicP) // U+0440 — looks like 'p' / 'r' depending on font
-	buf.WriteString(`e"`)
-
-	buf.WriteByte('}')
-
-	return buf.Bytes()
-}
-
-// ---------------------------------------------------------------------------
-// BidiOverride
-// ---------------------------------------------------------------------------
-//
-// Produces a JSON payload containing Unicode bidirectional control characters
-// embedded inside field values.  These characters can cause text renderers to
-// display content in a misleading order (the "Trojan Source" class of attack).
-//
-// Characters used:
-//
-//	U+202E RIGHT-TO-LEFT OVERRIDE (RLO)       UTF-8: 0xE2 0x80 0xAE
-//	U+202D LEFT-TO-RIGHT OVERRIDE (LRO)       UTF-8: 0xE2 0x80 0xAD
-//	U+200F RIGHT-TO-LEFT MARK      (RLM)       UTF-8: 0xE2 0x80 0x8F
-//	U+202C POP DIRECTIONAL FORMATTING (PDF)   UTF-8: 0xE2 0x80 0xAC
-
 // BidiRLO is the UTF-8 encoding of U+202E RIGHT-TO-LEFT OVERRIDE.
 var BidiRLO = []byte{0xE2, 0x80, 0xAE}
 
@@ -228,55 +217,6 @@ var BidiRLM = []byte{0xE2, 0x80, 0x8F}
 
 // BidiPDF is the UTF-8 encoding of U+202C POP DIRECTIONAL FORMATTING.
 var BidiPDF = []byte{0xE2, 0x80, 0xAC}
-
-// BidiOverride returns a JSON payload whose values embed bidirectional control
-// characters that can reverse or reorder the visual representation of text in
-// vulnerable renderers.
-//
-// Fields:
-//
-//	"filename": "<RLO>txt.exe<PDF>"      renders as "exe.txt" under RTL override
-//	"comment":  "safe<RLM>// evil code"  misleading directional marker
-//	"label":    "<LRO>normal<PDF>"       left-to-right forced override
-func BidiOverride() []byte {
-	var buf bytes.Buffer
-
-	buf.WriteString(`{"filename":"`)
-	buf.Write(BidiRLO)
-	buf.WriteString(`txt.exe`)
-	buf.Write(BidiPDF)
-	buf.WriteByte('"')
-
-	buf.WriteString(`,"comment":"safe`)
-	buf.Write(BidiRLM)
-	buf.WriteString(`// evil code"`)
-
-	buf.WriteString(`,"label":"`)
-	buf.Write(BidiLRO)
-	buf.WriteString(`normal`)
-	buf.Write(BidiPDF)
-	buf.WriteByte('"')
-
-	buf.WriteByte('}')
-
-	return buf.Bytes()
-}
-
-// ---------------------------------------------------------------------------
-// ZeroWidthChars
-// ---------------------------------------------------------------------------
-//
-// Produces a JSON payload where both field names and values contain zero-width
-// Unicode characters.  These characters are invisible in most renderers but
-// alter string identity, breaking naive equality checks and bytestring
-// comparisons.
-//
-// Characters used:
-//
-//	U+200B ZERO WIDTH SPACE (ZWSP)            UTF-8: 0xE2 0x80 0x8B
-//	U+200C ZERO WIDTH NON-JOINER (ZWNJ)       UTF-8: 0xE2 0x80 0x8C
-//	U+200D ZERO WIDTH JOINER (ZWJ)            UTF-8: 0xE2 0x80 0x8D
-//	U+FEFF ZERO WIDTH NO-BREAK SPACE / BOM    UTF-8: 0xEF 0xBB 0xBF
 
 // ZeroWidthSP is the UTF-8 encoding of U+200B ZERO WIDTH SPACE.
 var ZeroWidthSP = []byte{0xE2, 0x80, 0x8B}
@@ -290,37 +230,88 @@ var ZeroWidthJ = []byte{0xE2, 0x80, 0x8D}
 // ZeroWidthNBS is the UTF-8 encoding of U+FEFF ZERO WIDTH NO-BREAK SPACE (BOM).
 var ZeroWidthNBS = []byte{0xEF, 0xBB, 0xBF}
 
-// ZeroWidthChars returns a JSON payload where field names and values contain
-// invisible zero-width Unicode characters.
-//
-// Fields:
-//
-//	"user<ZWSP>name":  "admin"            key has invisible ZWSP between 'user' and 'name'
-//	"pass<ZWJ>word":   "secret<ZWNJ>!"   key has ZWJ; value has ZWNJ before '!'
-//	"token":           "<BOM>abc<ZWSP>"  value starts with BOM, ends with ZWSP
+// InvalidUTF8 returns raw bytes containing three categories of invalid UTF-8.
+// Used for low-level testing.
+func InvalidUTF8() []byte {
+	var buf bytes.Buffer
+	buf.WriteString(`{"surrogate":`)
+	buf.Write([]byte{0xED, 0xA0, 0x80})
+	buf.WriteString(`abcdefghi`)
+	buf.WriteByte('"')
+	buf.WriteByte(',')
+	buf.WriteString(`"overlong":`)
+	buf.Write([]byte{0xC0, 0x80})
+	buf.WriteString(`ZZZZZZ`)
+	buf.WriteByte('"')
+	buf.WriteByte(',')
+	buf.WriteString(`"truncated":`)
+	buf.Write([]byte{0xE2, 0x82})
+	buf.WriteByte('"')
+	buf.WriteByte('}')
+	return buf.Bytes()
+}
+
+// HomoglyphStrings returns raw bytes with Cyrillic homoglyphs.
+// Used for low-level testing.
+func HomoglyphStrings() []byte {
+	var buf bytes.Buffer
+	buf.WriteString(`{"username":"`)
+	buf.Write(HomoglyphCyrillicA)
+	buf.WriteString(`dmin"`)
+	buf.WriteString(`,"domain":"`)
+	buf.Write(HomoglyphCyrillicE)
+	buf.WriteString(`x`)
+	buf.Write(HomoglyphCyrillicA)
+	buf.WriteString(`mpl`)
+	buf.Write(HomoglyphCyrillicE)
+	buf.WriteByte('"')
+	buf.WriteString(`,"service":"`)
+	buf.Write(HomoglyphCyrillicC)
+	buf.Write(HomoglyphCyrillicO)
+	buf.Write(HomoglyphCyrillicP)
+	buf.WriteString(`e"`)
+	buf.WriteByte('}')
+	return buf.Bytes()
+}
+
+// BidiOverride returns raw bytes with bidirectional control characters.
+// Used for low-level testing.
+func BidiOverride() []byte {
+	var buf bytes.Buffer
+	buf.WriteString(`{"filename":"`)
+	buf.Write(BidiRLO)
+	buf.WriteString(`txt.exe`)
+	buf.Write(BidiPDF)
+	buf.WriteByte('"')
+	buf.WriteString(`,"comment":"safe`)
+	buf.Write(BidiRLM)
+	buf.WriteString(`// evil code"`)
+	buf.WriteString(`,"label":"`)
+	buf.Write(BidiLRO)
+	buf.WriteString(`normal`)
+	buf.Write(BidiPDF)
+	buf.WriteByte('"')
+	buf.WriteByte('}')
+	return buf.Bytes()
+}
+
+// ZeroWidthChars returns raw bytes with zero-width characters.
+// Used for low-level testing.
 func ZeroWidthChars() []byte {
 	var buf bytes.Buffer
-
-	// Key with ZWSP embedded: "user​name"
 	buf.WriteString(`{"user`)
-	buf.Write(ZeroWidthSP) // U+200B — invisible inside key
+	buf.Write(ZeroWidthSP)
 	buf.WriteString(`name":"admin"`)
-
-	// Key with ZWJ embedded: "pass‍word"; value with ZWNJ: "secret‌!"
 	buf.WriteString(`,"pass`)
-	buf.Write(ZeroWidthJ) // U+200D — invisible inside key
+	buf.Write(ZeroWidthJ)
 	buf.WriteString(`word":"secret`)
-	buf.Write(ZeroWidthNJ) // U+200C — invisible inside value
+	buf.Write(ZeroWidthNJ)
 	buf.WriteString(`!"`)
-
-	// Value starting with BOM and ending with ZWSP
 	buf.WriteString(`,"token":"`)
-	buf.Write(ZeroWidthNBS) // U+FEFF BOM — invisible at start of value
+	buf.Write(ZeroWidthNBS)
 	buf.WriteString(`abc`)
-	buf.Write(ZeroWidthSP) // U+200B — invisible at end of value
+	buf.Write(ZeroWidthSP)
 	buf.WriteByte('"')
-
 	buf.WriteByte('}')
-
 	return buf.Bytes()
 }

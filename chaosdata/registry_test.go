@@ -16,10 +16,17 @@ func (m *mockGenerator) Generate(opts GenerateOpts) (Payload, error) {
 }
 
 func TestRegistry(t *testing.T) {
-	// Reset registry for clean test
+	// Reset registry for clean test but restore later
 	mu.Lock()
+	oldRegistry := registry
 	registry = nil
 	mu.Unlock()
+
+	defer func() {
+		mu.Lock()
+		registry = oldRegistry
+		mu.Unlock()
+	}()
 
 	g1 := &mockGenerator{name: "gen1", category: "cat1"}
 	g2 := &mockGenerator{name: "gen2", category: "cat1"}

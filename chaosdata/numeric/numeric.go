@@ -1,17 +1,85 @@
-// Package numeric provides chaos data generators that produce raw []byte JSON
-// payloads exercising numeric edge cases: boundary values, special/invalid
-// values, scientific notation extremes, and type-ambiguous representations.
-//
-// Each generator is registered via init() using the package-level registry so
-// that callers can enumerate or invoke generators by name without importing
-// concrete types.
 package numeric
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
-	"sync"
+
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
+
+// NumericGenerator produces chaos data payloads for numeric edge cases.
+type NumericGenerator struct{}
+
+func (NumericGenerator) Name() string {
+	return "numeric"
+}
+
+func (NumericGenerator) Category() string {
+	return "numeric"
+}
+
+func (g NumericGenerator) Generate(opts chaosdata.GenerateOpts) (chaosdata.Payload, error) {
+	records := []map[string]interface{}{}
+
+	// Basic numeric values
+	records = append(records, map[string]interface{}{"type": "Zero", "value": 0})
+	records = append(records, map[string]interface{}{"type": "Negative Zero", "value": math.Copysign(0, -1)})
+	records = append(records, map[string]interface{}{"type": "MaxInt64", "value": int64(math.MaxInt64)})
+	records = append(records, map[string]interface{}{"type": "MinInt64", "value": int64(math.MinInt64)})
+	records = append(records, map[string]interface{}{"type": "MaxFloat64", "value": math.MaxFloat64})
+	records = append(records, map[string]interface{}{"type": "SmallestNonzeroFloat64", "value": math.SmallestNonzeroFloat64})
+
+	// Special values (as strings since JSON doesn't support them)
+	records = append(records, map[string]interface{}{"type": "NaN", "value": "NaN"})
+	records = append(records, map[string]interface{}{"type": "+Inf", "value": "+Inf"})
+	records = append(records, map[string]interface{}{"type": "-Inf", "value": "-Inf"})
+
+	// Overflow/underflow
+	records = append(records, map[string]interface{}{"type": "MaxInt32+1", "value": int64(math.MaxInt32) + 1})
+	records = append(records, map[string]interface{}{"type": "High-precision float", "value": 0.1234567890123456789})
+
+	// Boundary values
+	records = append(records, map[string]interface{}{"type": "2^53 (int exact as float64)", "value": float64(1 << 53)})
+	records = append(records, map[string]interface{}{"type": "2^53+1 (loses precision)", "value": float64(math.MaxInt64)})
+
+	// Scientific notation extremes
+	records = append(records, map[string]interface{}{"type": "1e308 (near max)", "value": 1e308})
+	records = append(records, map[string]interface{}{"type": "1e-324 (near min)", "value": 1e-324})
+
+	// Type ambiguity
+	records = append(records, map[string]interface{}{"type": "1.0 vs 1", "value": map[string]interface{}{"float": 1.0, "int": 1}})
+	records = append(records, map[string]interface{}{"type": "stringified int", "value": "42"})
+	records = append(records, map[string]interface{}{"type": "stringified float", "value": "3.14"})
+	records = append(records, map[string]interface{}{"type": "stringified scientific", "value": "1e10"})
+
+	count := opts.Count
+	if count < 1 {
+		count = 1
+	}
+
+	all := make([]map[string]interface{}, 0, len(records)*count)
+	for i := 0; i < count; i++ {
+		all = append(all, records...)
+	}
+
+	data, err := json.Marshal(all)
+	if err != nil {
+		return chaosdata.Payload{}, fmt.Errorf("numeric: marshal payload: %w", err)
+	}
+
+	return chaosdata.Payload{
+		Data: data,
+		Type: "application/json",
+		Attributes: map[string]string{
+			"generator": g.Name(),
+			"category":  g.Category(),
+			"records":   fmt.Sprintf("%d", len(all)),
+		},
+	}, nil
+}
+
+// Low-level generator interface and implementations
 
 // Generator produces a deterministic raw JSON payload as a []byte slice.
 // The payload may be valid or intentionally invalid JSON — callers should
@@ -25,15 +93,10 @@ type Generator interface {
 }
 
 // registry holds all registered generators, keyed by name.
-var (
-	mu       sync.RWMutex
-	registry = make(map[string]Generator)
-)
+var registry = make(map[string]Generator)
 
 // Register adds a Generator to the global registry. Panics on duplicate name.
 func Register(g Generator) {
-	mu.Lock()
-	defer mu.Unlock()
 	name := g.Name()
 	if _, exists := registry[name]; exists {
 		panic(fmt.Sprintf("numeric: duplicate generator registration: %q", name))
@@ -43,16 +106,12 @@ func Register(g Generator) {
 
 // Lookup returns the Generator registered under name and whether it exists.
 func Lookup(name string) (Generator, bool) {
-	mu.RLock()
-	defer mu.RUnlock()
 	g, ok := registry[name]
 	return g, ok
 }
 
 // All returns a slice of every registered Generator in an unspecified order.
 func All() []Generator {
-	mu.RLock()
-	defer mu.RUnlock()
 	gs := make([]Generator, 0, len(registry))
 	for _, g := range registry {
 		gs = append(gs, g)
@@ -65,18 +124,12 @@ func All() []Generator {
 // ---------------------------------------------------------------------------
 
 // boundaryValuesGenerator emits a JSON object containing numeric boundary
-// literals that stress integer and floating-point precision:
-//   - int64 max:  9223372036854775807
-//   - 2^53+1:     9007199254740993  (first integer not exactly representable as float64)
-//   - 2^53:       9007199254740992  (largest integer exactly representable as float64)
-//   - MaxFloat64: 1.7976931348623157e+308
+// literals that stress integer and floating-point precision.
 type boundaryValuesGenerator struct{}
 
 func (boundaryValuesGenerator) Name() string { return "boundary_values" }
 
 func (boundaryValuesGenerator) Generate() []byte {
-	// Use raw literal construction so the exact token bytes are preserved.
-	// json.Marshal would silently round 2^53+1 when encoding float64.
 	const payload = `{` +
 		`"int64_max":9223372036854775807,` +
 		`"pow2_53_plus1":9007199254740993,` +
@@ -87,20 +140,17 @@ func (boundaryValuesGenerator) Generate() []byte {
 }
 
 // ---------------------------------------------------------------------------
-// 2. SpecialValues  (intentionally invalid JSON)
+// 2. SpecialValues (intentionally invalid JSON)
 // ---------------------------------------------------------------------------
 
 // specialValuesGenerator emits a JSON object that uses literal NaN, Infinity,
 // -Infinity, and -0 as JSON number tokens — none of which are permitted by
-// RFC 8259 — plus string-wrapped variants of each so callers can compare the
-// two representations side by side.
+// RFC 8259.
 type specialValuesGenerator struct{}
 
 func (specialValuesGenerator) Name() string { return "special_values" }
 
 func (specialValuesGenerator) Generate() []byte {
-	// NaN / Infinity / -Infinity are rejected by json.Unmarshal.
-	// -0 is accepted as 0 by most parsers but is semantically distinct.
 	const payload = `{` +
 		`"nan":NaN,` +
 		`"pos_infinity":Infinity,` +
@@ -118,21 +168,13 @@ func (specialValuesGenerator) Generate() []byte {
 // 3. ScientificNotation
 // ---------------------------------------------------------------------------
 
-// scientificNotationGenerator emits a JSON object with four scientific-
-// notation literals that probe float64 range limits:
-//   - 1e308:  near MaxFloat64, representable
-//   - 1e-324: near SmallestNonzeroFloat64 (sub-normal floor)
-//   - 1e309:  overflow → +Inf when unmarshalled into float64
-//   - 1e-325: underflow → 0 when unmarshalled into float64
+// scientificNotationGenerator emits a JSON object with scientific notation
+// literals that probe float64 range limits.
 type scientificNotationGenerator struct{}
 
 func (scientificNotationGenerator) Name() string { return "scientific_notation" }
 
 func (scientificNotationGenerator) Generate() []byte {
-	// Verify the boundary values at init-time so we know they are correct.
-	_ = math.MaxFloat64        // 1.7976931348623157e+308
-	_ = math.SmallestNonzeroFloat64 // 5e-324
-
 	const payload = `{` +
 		`"near_max":1e308,` +
 		`"near_min":1e-324,` +
@@ -147,10 +189,7 @@ func (scientificNotationGenerator) Generate() []byte {
 // ---------------------------------------------------------------------------
 
 // typeAmbiguityGenerator emits a JSON object whose values illustrate common
-// type-ambiguity pitfalls parsed into interface{}:
-//   - 1.0 vs 1:           both become float64(1) via json.Unmarshal
-//   - stringified numbers: "42", "3.14", "1e10"
-//   - overflow string:     a decimal that exceeds float64 range as a string
+// type-ambiguity pitfalls when parsed into interface{}.
 type typeAmbiguityGenerator struct{}
 
 func (typeAmbiguityGenerator) Name() string { return "type_ambiguity" }
@@ -176,4 +215,5 @@ func init() {
 	Register(specialValuesGenerator{})
 	Register(scientificNotationGenerator{})
 	Register(typeAmbiguityGenerator{})
+	chaosdata.Register(NumericGenerator{})
 }

@@ -1,25 +1,83 @@
-package nulls_test
+package nulls
 
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 	"testing"
 
-	"github.com/dwsmith1983/chaos-data/chaosdata/nulls"
+	"github.com/dwsmith1983/chaos-data/chaosdata"
 )
 
-// ── NullVariants ─────────────────────────────────────────────────────────────
+// NullsGenerator tests
+
+func TestNullsGenerator_Category(t *testing.T) {
+	gen := &NullsGenerator{}
+	if gen.Category() != "nulls" {
+		t.Errorf("expected 'nulls', got '%s'", gen.Category())
+	}
+}
+
+func TestNullsGenerator_Generate(t *testing.T) {
+	gen := &NullsGenerator{}
+	vals, err := gen.Generate(chaosdata.GenerateOpts{Count: 1})
+	if err != nil {
+		t.Fatalf("Generate() err = %v", err)
+	}
+
+	expectedDesc := []string{
+		"nil",
+		"empty string",
+		"zero-length slice",
+		"zero-length map",
+		"string literal null",
+		"string literal NULL",
+		"string literal nil",
+		"string literal None",
+		"string literal undefined",
+		"Unicode null",
+		"null byte in middle of string",
+		"sql.NullString Valid=false",
+		"nested object with null field",
+		"doubly-nested null",
+		"triply-nested null",
+		"mixed null branches",
+		"array with null elements",
+		"array of all nulls",
+		"mixed types with null",
+		"single null element array",
+		"empty array",
+		"sparse nulls in array",
+	}
+
+	found := make(map[string]bool)
+	var parsed []map[string]any
+	if err := json.Unmarshal(vals.Data, &parsed); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	for _, v := range parsed {
+		if typ, ok := v["type"].(string); ok {
+			found[typ] = true
+		}
+	}
+
+	for _, desc := range expectedDesc {
+		if !found[desc] {
+			t.Errorf("Missing expected chaos value with description: %s", desc)
+		}
+	}
+}
+
+// Low-level generator tests
 
 func TestNullVariants_ReturnsValidJSON(t *testing.T) {
-	payload := nulls.NullVariants()
+	payload := NullVariants()
 	if !json.Valid(payload) {
 		t.Fatalf("NullVariants() produced invalid JSON: %s", payload)
 	}
 }
 
 func TestNullVariants_IsArray(t *testing.T) {
-	payload := nulls.NullVariants()
+	payload := NullVariants()
 	var arr []json.RawMessage
 	if err := json.Unmarshal(payload, &arr); err != nil {
 		t.Fatalf("NullVariants() is not a JSON array: %v", err)
@@ -27,7 +85,7 @@ func TestNullVariants_IsArray(t *testing.T) {
 }
 
 func TestNullVariants_LiteralStringsPresent(t *testing.T) {
-	payload := nulls.NullVariants()
+	payload := NullVariants()
 
 	cases := []struct {
 		name    string
@@ -47,8 +105,6 @@ func TestNullVariants_LiteralStringsPresent(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			// Strip all whitespace-sensitive matching by looking for the raw
-			// literal anywhere in the compact JSON.
 			compact := compactJSON(t, payload)
 			if !bytes.Contains(compact, []byte(tc.literal)) {
 				t.Errorf("expected literal %q in payload\ngot: %s", tc.literal, compact)
@@ -58,7 +114,7 @@ func TestNullVariants_LiteralStringsPresent(t *testing.T) {
 }
 
 func TestNullVariants_RecordCount(t *testing.T) {
-	payload := nulls.NullVariants()
+	payload := NullVariants()
 	var arr []json.RawMessage
 	if err := json.Unmarshal(payload, &arr); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -70,24 +126,22 @@ func TestNullVariants_RecordCount(t *testing.T) {
 }
 
 func TestNullVariants_Determinism(t *testing.T) {
-	a := nulls.NullVariants()
-	b := nulls.NullVariants()
+	a := NullVariants()
+	b := NullVariants()
 	if !bytes.Equal(a, b) {
 		t.Error("NullVariants() is not deterministic across successive calls")
 	}
 }
 
-// ── NestedNulls ───────────────────────────────────────────────────────────────
-
 func TestNestedNulls_ReturnsValidJSON(t *testing.T) {
-	payload := nulls.NestedNulls()
+	payload := NestedNulls()
 	if !json.Valid(payload) {
 		t.Fatalf("NestedNulls() produced invalid JSON: %s", payload)
 	}
 }
 
 func TestNestedNulls_IsObject(t *testing.T) {
-	payload := nulls.NestedNulls()
+	payload := NestedNulls()
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &obj); err != nil {
 		t.Fatalf("NestedNulls() is not a JSON object: %v", err)
@@ -95,7 +149,7 @@ func TestNestedNulls_IsObject(t *testing.T) {
 }
 
 func TestNestedNulls_LiteralStringsPresent(t *testing.T) {
-	payload := nulls.NestedNulls()
+	payload := NestedNulls()
 	compact := compactJSON(t, payload)
 
 	cases := []struct {
@@ -122,22 +176,20 @@ func TestNestedNulls_LiteralStringsPresent(t *testing.T) {
 }
 
 func TestNestedNulls_TopLevelKeyCount(t *testing.T) {
-	payload := nulls.NestedNulls()
+	payload := NestedNulls()
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &obj); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	const want = 5 // depth1, depth2, depth3, depth4, mixed
+	const want = 5
 	if len(obj) != want {
 		t.Errorf("NestedNulls() top-level key count = %d, want %d", len(obj), want)
 	}
 }
 
 func TestNestedNulls_Determinism(t *testing.T) {
-	// JSON object key ordering is not guaranteed by encoding/json for maps,
-	// but the semantic content must be identical: unmarshal both and compare.
-	a := nulls.NestedNulls()
-	b := nulls.NestedNulls()
+	a := NestedNulls()
+	b := NestedNulls()
 
 	var objA, objB any
 	if err := json.Unmarshal(a, &objA); err != nil {
@@ -156,24 +208,20 @@ func TestNestedNulls_Determinism(t *testing.T) {
 		t.Fatalf("re-marshal b: %v", err)
 	}
 
-	// Compare re-marshalled forms; encoding/json is deterministic for the
-	// same Go value passed twice.
 	if !bytes.Equal(ra, rb) {
 		t.Error("NestedNulls() semantic content is not deterministic across successive calls")
 	}
 }
 
-// ── ArrayNulls ────────────────────────────────────────────────────────────────
-
 func TestArrayNulls_ReturnsValidJSON(t *testing.T) {
-	payload := nulls.ArrayNulls()
+	payload := ArrayNulls()
 	if !json.Valid(payload) {
 		t.Fatalf("ArrayNulls() produced invalid JSON: %s", payload)
 	}
 }
 
 func TestArrayNulls_IsObject(t *testing.T) {
-	payload := nulls.ArrayNulls()
+	payload := ArrayNulls()
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(payload, &obj); err != nil {
 		t.Fatalf("ArrayNulls() is not a JSON object: %v", err)
@@ -181,7 +229,7 @@ func TestArrayNulls_IsObject(t *testing.T) {
 }
 
 func TestArrayNulls_LiteralStringsPresent(t *testing.T) {
-	payload := nulls.ArrayNulls()
+	payload := ArrayNulls()
 	compact := compactJSON(t, payload)
 
 	cases := []struct {
@@ -212,7 +260,7 @@ func TestArrayNulls_LiteralStringsPresent(t *testing.T) {
 }
 
 func TestArrayNulls_NullElementsHasTwoNulls(t *testing.T) {
-	payload := nulls.ArrayNulls()
+	payload := ArrayNulls()
 	var obj map[string][]any
 	if err := json.Unmarshal(payload, &obj); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -233,7 +281,7 @@ func TestArrayNulls_NullElementsHasTwoNulls(t *testing.T) {
 }
 
 func TestArrayNulls_AllNullEveryElementIsNull(t *testing.T) {
-	payload := nulls.ArrayNulls()
+	payload := ArrayNulls()
 	var obj map[string][]any
 	if err := json.Unmarshal(payload, &obj); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -253,8 +301,8 @@ func TestArrayNulls_AllNullEveryElementIsNull(t *testing.T) {
 }
 
 func TestArrayNulls_Determinism(t *testing.T) {
-	a := nulls.ArrayNulls()
-	b := nulls.ArrayNulls()
+	a := ArrayNulls()
+	b := ArrayNulls()
 
 	var objA, objB any
 	if err := json.Unmarshal(a, &objA); err != nil {
@@ -272,56 +320,8 @@ func TestArrayNulls_Determinism(t *testing.T) {
 	}
 }
 
-// ── Registry ──────────────────────────────────────────────────────────────────
+// Helper function
 
-func TestRegistry_AllGeneratorsRegistered(t *testing.T) {
-	want := []string{"array-nulls", "nested-nulls", "null-variants"}
-	sort.Strings(want)
-
-	got := nulls.Registry.Names()
-	sort.Strings(got)
-
-	if len(got) != len(want) {
-		t.Fatalf("Registry.Names() = %v, want %v", got, want)
-	}
-	for i, name := range want {
-		if got[i] != name {
-			t.Errorf("Registry.Names()[%d] = %q, want %q", i, got[i], name)
-		}
-	}
-}
-
-func TestRegistry_GetKnownGenerator(t *testing.T) {
-	cases := []string{"null-variants", "nested-nulls", "array-nulls"}
-	for _, name := range cases {
-		name := name
-		t.Run(name, func(t *testing.T) {
-			g, ok := nulls.Registry.Get(name)
-			if !ok {
-				t.Fatalf("Registry.Get(%q) not found", name)
-			}
-			payload := g()
-			if len(payload) == 0 {
-				t.Errorf("generator %q returned empty payload", name)
-			}
-			if !json.Valid(payload) {
-				t.Errorf("generator %q returned invalid JSON: %s", name, payload)
-			}
-		})
-	}
-}
-
-func TestRegistry_GetUnknownGeneratorReturnsFalse(t *testing.T) {
-	_, ok := nulls.Registry.Get("does-not-exist")
-	if ok {
-		t.Error("expected ok=false for unknown generator name")
-	}
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-// compactJSON re-encodes b through json.Compact so literal-string matching is
-// not sensitive to the whitespace choices of the encoder.
 func compactJSON(t *testing.T, b []byte) []byte {
 	t.Helper()
 	var buf bytes.Buffer
