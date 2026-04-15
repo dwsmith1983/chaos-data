@@ -11,28 +11,46 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: chaos-data
+
+      - uses: actions/checkout@v4
+        with:
+          repository: dwsmith1983/interlock
+          path: interlock
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: chaos-data/go.mod
 
       - name: Run tests
+        working-directory: chaos-data
         run: go test -race ./... -count=1
 
       - name: Run vet
+        working-directory: chaos-data
         run: go vet ./...
 
       - name: Build
+        working-directory: chaos-data
         run: go build ./...
 
   suite:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: chaos-data
+
+      - uses: actions/checkout@v4
+        with:
+          repository: dwsmith1983/interlock
+          path: interlock
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: chaos-data/go.mod
 
       - name: Run chaos suite (local)
+        working-directory: chaos-data
         run: go test ./suites/interlock/... -v -target=local -race -count=1
